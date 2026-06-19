@@ -2,7 +2,7 @@
 
 ## 项目背景
 
-Meow Diary 是一个 AI 陪伴日记 App。用户写日记，AI 以"猫咪"的人设陪伴、回应、记录心情。本仓库是前端部分。
+Meow Diary 是一个 AI 陪伴日记 App。"Meow"只是体现 App 整体可爱日记本氛围的命名，并不代表 AI 聊天对象是猫咪人设——AI 直接对接 Claude API，保持 Claude 本身的人格跟用户聊天，用户习惯称呼它"小克"。本仓库是前端部分。
 
 整体架构：
 - 前端：React + Vite，部署到 Vercel（本仓库）
