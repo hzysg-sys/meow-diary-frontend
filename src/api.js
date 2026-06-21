@@ -13,6 +13,27 @@ export async function fetchHistory(sessionId, { limit = 30, before } = {}) {
   return res.json()
 }
 
+export async function fetchSettings() {
+  const res = await fetch(`${API_BASE_URL}/api/settings`)
+  if (!res.ok) {
+    throw new Error(`加载设置失败 (${res.status})`)
+  }
+  return res.json()
+}
+
+export async function updateSettings(settings) {
+  const res = await fetch(`${API_BASE_URL}/api/settings`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  })
+  const data = await res.json().catch(() => null)
+  if (!res.ok) {
+    throw new Error(data?.error || `保存设置失败 (${res.status})`)
+  }
+  return data
+}
+
 export async function sendChatMessage(sessionId, message) {
   const res = await fetch(`${API_BASE_URL}/api/chat`, {
     method: 'POST',

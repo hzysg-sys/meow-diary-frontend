@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { CloseIcon } from './icons'
+import { fetchSettings, updateSettings } from '../api'
 
 const DEFAULT_SETTINGS = {
   systemPrompt: '',
@@ -10,9 +11,54 @@ const DEFAULT_SETTINGS = {
 
 export default function SettingsModal({ open, onClose }) {
   const [form, setForm] = useState(DEFAULT_SETTINGS)
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [statusMsg, setStatusMsg] = useState(null)
+  const [errorMsg, setErrorMsg] = useState(null)
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    setLoading(true)
+    setErrorMsg(null)
+    setStatusMsg(null)
+    fetchSettings()
+      .then((data) => {
+        if (cancelled) return
+        setForm(data)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setErrorMsg(err.message)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open])
 
   function handleOverlayClick(e) {
     if (e.target === e.currentTarget) onClose()
+  }
+
+  async function handleSave() {
+    setSaving(true)
+    setErrorMsg(null)
+    setStatusMsg(null)
+    try {
+      const saved = await updateSettings(form)
+      setForm(saved)
+      setStatusMsg('已保存')
+      setTimeout(() => {
+        onClose()
+      }, 500)
+    } catch (err) {
+      setErrorMsg(err.message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -24,6 +70,7 @@ export default function SettingsModal({ open, onClose }) {
             <CloseIcon />
           </button>
         </div>
+        {loading && <p style={{ textAlign: 'center', fontSize: 13, color: '#a8a29e' }}>正在加载设置...</p>}
         <div className="field">
           <label>人设 / 系统提示词</label>
           <textarea
@@ -62,8 +109,10 @@ export default function SettingsModal({ open, onClose }) {
             />
           </div>
         </div>
-        <button className="save-btn" onClick={onClose}>
-          保存
+        {errorMsg && <p style={{ textAlign: 'center', fontSize: 13, color: '#c98a98' }}>{errorMsg}</p>}
+        {statusMsg && <p style={{ textAlign: 'center', fontSize: 13, color: '#78716c' }}>{statusMsg}</p>}
+        <button className="save-btn" onClick={handleSave} disabled={saving || loading}>
+          {saving ? '保存中...' : '保存'}
         </button>
       </div>
     </div>
