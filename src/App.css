@@ -14,7 +14,7 @@
   align-items: center;
   justify-content: center;
   background-color: #ffebef;
-  background-image: url('https://raw.githubusercontent.com/ghk318106-netizen/begin-picture/737c235a96e436688d46b4fcf3911fb68a225024/1781749195852.jpg');
+  background-image: url('/backgrounds/splash-bg.jpg');
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
@@ -80,7 +80,7 @@
   width: 100%;
   overflow-y: auto;
   background-color: #ffebef;
-  background-image: url('https://raw.githubusercontent.com/ghk318106-netizen/zhuyebizhi/main/1781777596287.png');
+  background-image: url('/backgrounds/home-bg.png');
   background-size: cover;
   background-position: center top;
   background-repeat: no-repeat;
@@ -373,7 +373,7 @@
   flex-direction: column;
   gap: 16px;
   background-color: #fbefe5;
-  background-image: url('https://raw.githubusercontent.com/ghk318106-netizen/action-picture/main/1781777761896.png');
+  background-image: url('/backgrounds/chat-bg.png');
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;

@@ -1,7 +1,5 @@
-export const AI_AVATAR_URL =
-  'https://raw.githubusercontent.com/hzysg-sys/touxiang_Claude/main/Image_1781858606184_249.jpg'
-export const USER_AVATAR_URL =
-  'https://raw.githubusercontent.com/hzysg-sys/touxiang_me/main/Image_1781858636733_248.jpg'
+export const AI_AVATAR_URL = '/avatars/ai-avatar.jpg'
+export const USER_AVATAR_URL = '/avatars/user-avatar.jpg'
 
 export const MEET_DATE = new Date(2026, 5, 3)
 
