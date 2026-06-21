@@ -49,6 +49,7 @@ function App() {
           }}
         />
         <ChatView
+          active={view === VIEW.CHAT}
           onBack={goHome}
           onOpenSidebar={() => setSidebarOpen(true)}
           onOpenSettings={() => setSettingsOpen(true)}
