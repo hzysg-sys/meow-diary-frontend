@@ -8,6 +8,7 @@ import SessionListPage from './components/SessionListPage'
 import Sidebar from './components/Sidebar'
 import SettingsModal from './components/SettingsModal'
 import ChatView from './components/ChatView'
+import { fetchSessions, createSession } from './api'
 
 const VIEW = {
   SPLASH: 'splash',
@@ -28,8 +29,18 @@ function App() {
   function goHome() {
     setView(VIEW.HOME)
   }
-  function goSessions() {
-    setView(VIEW.SESSIONS)
+  async function goChat() {
+    if (currentSessionId == null) {
+      try {
+        const sessions = await fetchSessions()
+        const session = sessions[0] ?? (await createSession())
+        setCurrentSessionId(session.id)
+      } catch (err) {
+        console.error('加载会话失败:', err)
+        return
+      }
+    }
+    setView(VIEW.CHAT)
   }
   function goPlaceholder(title) {
     setPlaceholderTitle(title)
@@ -43,7 +54,7 @@ function App() {
     <>
       {view === VIEW.SPLASH && <Splash onEnter={goHome} />}
 
-      <Home show={view === VIEW.HOME} onOpenChat={goSessions} onOpenPlaceholder={goPlaceholder} onOpenMemory={goMemory} />
+      <Home show={view === VIEW.HOME} onOpenChat={goChat} onOpenPlaceholder={goPlaceholder} onOpenMemory={goMemory} />
 
       <PlaceholderView show={view === VIEW.PLACEHOLDER} title={placeholderTitle} onBack={goHome} />
 
@@ -62,6 +73,8 @@ function App() {
       <div id="app" className={view === VIEW.CHAT ? 'show' : ''}>
         <Sidebar
           open={sidebarOpen}
+          currentSessionId={currentSessionId}
+          onSessionChange={(id) => setCurrentSessionId(id)}
           onClose={() => setSidebarOpen(false)}
           onOpenSettings={() => {
             setSidebarOpen(false)
