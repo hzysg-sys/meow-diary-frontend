@@ -34,6 +34,35 @@ export async function updateSettings(settings) {
   return data
 }
 
+export async function fetchMemories() {
+  const res = await fetch(`${API_BASE_URL}/api/memories`)
+  if (!res.ok) {
+    throw new Error(`加载记忆文档失败 (${res.status})`)
+  }
+  return res.json()
+}
+
+export async function uploadMemory({ title, content }) {
+  const res = await fetch(`${API_BASE_URL}/api/memories/upload`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, content }),
+  })
+  const data = await res.json().catch(() => null)
+  if (!res.ok) {
+    throw new Error(data?.error || `上传失败 (${res.status})`)
+  }
+  return data
+}
+
+export async function deleteMemory(id) {
+  const res = await fetch(`${API_BASE_URL}/api/memories/${id}`, { method: 'DELETE' })
+  if (!res.ok) {
+    const data = await res.json().catch(() => null)
+    throw new Error(data?.error || `删除失败 (${res.status})`)
+  }
+}
+
 export async function sendChatMessage(sessionId, message) {
   const res = await fetch(`${API_BASE_URL}/api/chat`, {
     method: 'POST',

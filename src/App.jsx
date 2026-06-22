@@ -3,6 +3,7 @@ import './App.css'
 import Splash from './components/Splash'
 import Home from './components/Home'
 import PlaceholderView from './components/PlaceholderView'
+import MemoryPage from './components/MemoryPage'
 import Sidebar from './components/Sidebar'
 import SettingsModal from './components/SettingsModal'
 import ChatView from './components/ChatView'
@@ -12,6 +13,7 @@ const VIEW = {
   HOME: 'home',
   CHAT: 'chat',
   PLACEHOLDER: 'placeholder',
+  MEMORY: 'memory',
 }
 
 function App() {
@@ -30,14 +32,19 @@ function App() {
     setPlaceholderTitle(title)
     setView(VIEW.PLACEHOLDER)
   }
+  function goMemory() {
+    setView(VIEW.MEMORY)
+  }
 
   return (
     <>
       {view === VIEW.SPLASH && <Splash onEnter={goHome} />}
 
-      <Home show={view === VIEW.HOME} onOpenChat={goChat} onOpenPlaceholder={goPlaceholder} />
+      <Home show={view === VIEW.HOME} onOpenChat={goChat} onOpenPlaceholder={goPlaceholder} onOpenMemory={goMemory} />
 
       <PlaceholderView show={view === VIEW.PLACEHOLDER} title={placeholderTitle} onBack={goHome} />
+
+      <MemoryPage show={view === VIEW.MEMORY} onBack={goHome} />
 
       <div id="app" className={view === VIEW.CHAT ? 'show' : ''}>
         <Sidebar
