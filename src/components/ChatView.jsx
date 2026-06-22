@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { FIXED_SESSION_ID } from '../constants'
 import { fetchHistory, sendChatMessage } from '../api'
 import Avatar from './Avatar'
 import TypingIndicator from './TypingIndicator'
@@ -26,7 +25,7 @@ function nextLocalId() {
   return localIdCounter--
 }
 
-export default function ChatView({ active, onBack, onOpenSidebar, onOpenSettings }) {
+export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onOpenSettings }) {
   const [messages, setMessages] = useState([])
   const [loadingHistory, setLoadingHistory] = useState(true)
   const [historyError, setHistoryError] = useState(null)
@@ -41,8 +40,9 @@ export default function ChatView({ active, onBack, onOpenSidebar, onOpenSettings
   const prependRestoreRef = useRef(null)
 
   useEffect(() => {
+    if (sessionId == null) return
     let cancelled = false
-    fetchHistory(FIXED_SESSION_ID, { limit: PAGE_SIZE })
+    fetchHistory(sessionId, { limit: PAGE_SIZE })
       .then(({ messages: history, hasMore: more }) => {
         if (cancelled) return
         setMessages(history.map(toUiMessage))
@@ -59,7 +59,7 @@ export default function ChatView({ active, onBack, onOpenSidebar, onOpenSettings
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [sessionId])
 
   // 面板靠外层 #app 的 show class 控制显隐，ChatView 一直挂载着不会重新 mount——
   // 所以滚动要等 active 真正变 true（面板有了实际尺寸）才能生效，光靠 messages 变化触发会在隐藏时白跑一次
@@ -94,7 +94,7 @@ export default function ChatView({ active, onBack, onOpenSidebar, onOpenSettings
     prependRestoreRef.current = el ? { scrollHeight: el.scrollHeight, scrollTop: el.scrollTop } : null
 
     try {
-      const { messages: older, hasMore: more } = await fetchHistory(FIXED_SESSION_ID, {
+      const { messages: older, hasMore: more } = await fetchHistory(sessionId, {
         limit: PAGE_SIZE,
         before: oldestId,
       })
@@ -105,7 +105,7 @@ export default function ChatView({ active, onBack, onOpenSidebar, onOpenSettings
     } finally {
       setLoadingMore(false)
     }
-  }, [loadingMore, hasMore, messages])
+  }, [loadingMore, hasMore, messages, sessionId])
 
   function handleMessagesScroll(e) {
     if (e.target.scrollTop < LOAD_MORE_THRESHOLD) {
@@ -123,7 +123,7 @@ export default function ChatView({ active, onBack, onOpenSidebar, onOpenSettings
     setIsSending(true)
 
     try {
-      const reply = await sendChatMessage(FIXED_SESSION_ID, text)
+      const reply = await sendChatMessage(sessionId, text)
       pendingScrollRef.current = 'smooth'
       setMessages((prev) => [...prev, { id: nextLocalId(), role: 'assistant', content: reply, time: formatTime() }])
     } catch {
