@@ -85,7 +85,7 @@ function App() {
           key={currentSessionId}
           active={view === VIEW.CHAT}
           sessionId={currentSessionId}
-          onBack={() => setView(VIEW.SESSIONS)}
+          onBack={() => setView(VIEW.HOME)}
           onOpenSidebar={() => setSidebarOpen(true)}
           onOpenSettings={() => setSettingsOpen(true)}
         />
