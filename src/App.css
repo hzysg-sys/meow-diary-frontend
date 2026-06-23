@@ -630,11 +630,49 @@
 .msg-time {
   font-size: 11px;
   color: #8b7355;
-  margin-top: 4px;
   text-shadow: 0 1px 3px rgba(255, 255, 255, 0.6);
 }
 .msg-row.user .msg-time {
   text-align: right;
+}
+
+.msg-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.msg-row.user .msg-footer {
+  justify-content: flex-end;
+}
+
+.msg-actions {
+  display: flex;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+.msg-action-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  color: #bbb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.msg-action-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #888;
+}
+
+.msg-action-btn.copied {
+  color: #4caf50;
 }
 
 .typing-dots {

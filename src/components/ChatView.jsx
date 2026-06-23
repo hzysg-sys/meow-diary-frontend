@@ -33,6 +33,7 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
   const [loadingMore, setLoadingMore] = useState(false)
   const [input, setInput] = useState('')
   const [isSending, setIsSending] = useState(false)
+  const [copiedId, setCopiedId] = useState(null)
   const messagesRef = useRef(null)
   // 'instant' | 'smooth' | null —— 下一次 messages 变化后要不要滚到底部，以及用什么方式滚
   const pendingScrollRef = useRef(null)
@@ -137,6 +138,12 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
     }
   }
 
+  const handleCopy = (id, content) => {
+    navigator.clipboard.writeText(content)
+    setCopiedId(id)
+    setTimeout(() => setCopiedId(null), 2000)
+  }
+
   function handleKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -176,7 +183,27 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
             {m.role === 'assistant' && <Avatar role="assistant" />}
             <div className="msg-wrap">
               <div className="bubble">{m.content}</div>
-              <div className="msg-time">{m.time}</div>
+              <div className="msg-footer">
+                <div className="msg-time">{m.time}</div>
+                <div className="msg-actions">
+                  <button
+                    className={`msg-action-btn${copiedId === m.id ? ' copied' : ''}`}
+                    onClick={() => handleCopy(m.id, m.content)}
+                    title="复制"
+                  >
+                    {copiedId === m.id ? (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <rect x="9" y="9" width="13" height="13" rx="2" />
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
             {m.role === 'user' && <Avatar role="user" />}
           </div>
