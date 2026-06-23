@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { fetchHistory, sendChatMessage } from '../api'
+import { fetchHistory, sendChatMessage, regenerateMessage } from '../api'
 import Avatar from './Avatar'
 import TypingIndicator from './TypingIndicator'
 import { BackIcon, MenuIcon, SettingsIcon, SendIcon } from './icons'
@@ -34,6 +34,7 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
   const [input, setInput] = useState('')
   const [isSending, setIsSending] = useState(false)
   const [copiedId, setCopiedId] = useState(null)
+  const [regeneratingId, setRegeneratingId] = useState(null)
   const messagesRef = useRef(null)
   // 'instant' | 'smooth' | null —— 下一次 messages 变化后要不要滚到底部，以及用什么方式滚
   const pendingScrollRef = useRef(null)
@@ -144,6 +145,21 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
     setTimeout(() => setCopiedId(null), 2000)
   }
 
+  const handleRegenerate = async (id) => {
+    if (regeneratingId) return
+    setRegeneratingId(id)
+    try {
+      const content = await regenerateMessage(id)
+      if (content) {
+        setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, content } : m)))
+      }
+    } catch (err) {
+      console.error('重新生成失败', err)
+    } finally {
+      setRegeneratingId(null)
+    }
+  }
+
   function handleKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -202,6 +218,19 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
                       </svg>
                     )}
                   </button>
+                  {m.role === 'assistant' && (
+                    <button
+                      className={`msg-action-btn${regeneratingId === m.id ? ' regenerating' : ''}`}
+                      onClick={() => handleRegenerate(m.id)}
+                      disabled={!!regeneratingId}
+                      title="重新生成"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="1 4 1 10 7 10" />
+                        <path d="M3.51 15a9 9 0 1 0 .49-4" />
+                      </svg>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>

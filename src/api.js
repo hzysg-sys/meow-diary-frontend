@@ -100,3 +100,12 @@ export async function sendChatMessage(sessionId, message) {
   }
   return data.reply
 }
+
+export async function regenerateMessage(id) {
+  const res = await fetch(`${API_BASE_URL}/api/messages/${id}/regenerate`, { method: 'POST' })
+  const data = await res.json().catch(() => null)
+  if (!res.ok) {
+    throw new Error(data?.error || `重新生成失败 (${res.status})`)
+  }
+  return data.content
+}

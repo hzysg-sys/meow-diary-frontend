@@ -675,6 +675,15 @@
   color: #4caf50;
 }
 
+.msg-action-btn.regenerating svg {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .typing-dots {
   display: flex;
   align-items: center;
