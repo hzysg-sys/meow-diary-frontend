@@ -3,8 +3,8 @@
   "short_name": "MeowDiary",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffebef",
-  "theme_color": "#c98a98",
+  "background_color": "#fef5f3",
+  "theme_color": "#fef5f3",
   "icons": [
     {
       "src": "/app-icon-192.png",
