@@ -1,6 +1,6 @@
 {
-  "name": "Meow Diary",
-  "short_name": "Meow",
+  "name": "MeowDiary",
+  "short_name": "MeowDiary",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffebef",
