@@ -119,6 +119,19 @@ export async function regenerateMessage(id) {
   return data.content
 }
 
+export async function pokeAssistant(sessionId) {
+  const res = await fetch(`${API_BASE_URL}/api/poke`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id: sessionId }),
+  })
+  const data = await res.json().catch(() => null)
+  if (!res.ok) {
+    throw new Error(data?.error || `戳一戳失败 (${res.status})`)
+  }
+  return data.message
+}
+
 export async function editAndRegenerateMessage(id, newContent) {
   const res = await fetch(`${API_BASE_URL}/api/messages/${id}/edit-and-regenerate`, {
     method: 'POST',

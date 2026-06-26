@@ -684,6 +684,20 @@
   background: #e5d2d5;
   color: #8b6d72;
 }
+.avatar-poke-wrap {
+  display: contents;
+}
+.avatar-poke-wrap.poke-shake .avatar {
+  animation: poke-shake 0.4s ease;
+}
+@keyframes poke-shake {
+  0%   { transform: rotate(0deg); }
+  20%  { transform: rotate(-18deg); }
+  45%  { transform: rotate(16deg); }
+  65%  { transform: rotate(-12deg); }
+  80%  { transform: rotate(8deg); }
+  100% { transform: rotate(0deg); }
+}
 .avatar-user {
   background: #ffebee;
   color: #c98a98;

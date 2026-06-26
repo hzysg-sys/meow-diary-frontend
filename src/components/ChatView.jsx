@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { fetchHistory, sendChatMessage, regenerateMessage, editAndRegenerateMessage } from '../api'
+import { fetchHistory, sendChatMessage, regenerateMessage, editAndRegenerateMessage, pokeAssistant } from '../api'
 import Avatar from './Avatar'
 import TypingIndicator from './TypingIndicator'
 import { BackIcon, MenuIcon, SettingsIcon, SendIcon } from './icons'
@@ -40,6 +40,8 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
   const [editLoading, setEditLoading] = useState(false)
   const [emptyResponseHint, setEmptyResponseHint] = useState(null)
   const [emptyResponseRetrying, setEmptyResponseRetrying] = useState(false)
+  const [pokingAvatarId, setPokingAvatarId] = useState(null)
+  const pokeCooldownRef = useRef(false)
   const messagesRef = useRef(null)
   // 'instant' | 'smooth' | null —— 下一次 messages 变化后要不要滚到底部，以及用什么方式滚
   const pendingScrollRef = useRef(null)
@@ -227,6 +229,23 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
     }
   }
 
+  const handlePokeAvatar = async (msgId) => {
+    if (pokeCooldownRef.current) return
+    pokeCooldownRef.current = true
+    setPokingAvatarId(msgId)
+    setTimeout(() => setPokingAvatarId(null), 400)
+    setTimeout(() => { pokeCooldownRef.current = false }, 2000)
+    try {
+      const msg = await pokeAssistant(sessionId)
+      if (msg) {
+        pendingScrollRef.current = 'smooth'
+        setMessages((prev) => [...prev, toUiMessage(msg)])
+      }
+    } catch (err) {
+      console.error('戳一戳失败', err)
+    }
+  }
+
   function handleKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -263,7 +282,14 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
         )}
         {messages.map((m) => (
           <div key={m.id} className={`msg-row ${m.role}`}>
-            {m.role === 'assistant' && <Avatar role="assistant" />}
+            {m.role === 'assistant' && (
+              <div
+                className={`avatar-poke-wrap${pokingAvatarId === m.id ? ' poke-shake' : ''}`}
+                onDoubleClick={() => handlePokeAvatar(m.id)}
+              >
+                <Avatar role="assistant" />
+              </div>
+            )}
             <div className="msg-wrap">
               {editingId === m.id ? (
                 <>
