@@ -684,6 +684,74 @@
   to { transform: rotate(360deg); }
 }
 
+.edit-bubble {
+  padding: 8px 12px;
+}
+
+.edit-textarea {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(201, 138, 152, 0.4);
+  color: #57534e;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+  font-family: inherit;
+  padding: 0 0 4px;
+  box-sizing: border-box;
+}
+
+.edit-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  justify-content: flex-end;
+}
+
+.edit-confirm-btn,
+.edit-cancel-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  min-width: 28px;
+  min-height: 24px;
+}
+
+.edit-confirm-btn {
+  color: #4caf50;
+}
+
+.edit-confirm-btn:hover:not(:disabled) {
+  background: rgba(76, 175, 80, 0.12);
+}
+
+.edit-cancel-btn {
+  color: #c98a98;
+}
+
+.edit-cancel-btn:hover:not(:disabled) {
+  background: rgba(201, 138, 152, 0.12);
+}
+
+.edit-confirm-btn:disabled,
+.edit-cancel-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.edit-confirm-btn.loading svg {
+  animation: spin 1s linear infinite;
+}
+
 .typing-dots {
   display: flex;
   align-items: center;

@@ -109,3 +109,16 @@ export async function regenerateMessage(id) {
   }
   return data.content
 }
+
+export async function editAndRegenerateMessage(id, newContent) {
+  const res = await fetch(`${API_BASE_URL}/api/messages/${id}/edit-and-regenerate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ newContent }),
+  })
+  const data = await res.json().catch(() => null)
+  if (!res.ok) {
+    throw new Error(data?.error || `编辑并重新生成失败 (${res.status})`)
+  }
+  return data
+}
