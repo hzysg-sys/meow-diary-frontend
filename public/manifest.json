@@ -1,0 +1,20 @@
+{
+  "name": "Meow Diary",
+  "short_name": "Meow",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffebef",
+  "theme_color": "#c98a98",
+  "icons": [
+    {
+      "src": "/avatars/ai-avatar.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    },
+    {
+      "src": "/avatars/ai-avatar.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}
