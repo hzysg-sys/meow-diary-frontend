@@ -54,13 +54,7 @@ export default function TabBar({ activeTab, onTabChange }) {
           onClick={() => onTabChange(tab.key)}
         >
           {tab.key === 'home' ? (
-            <img
-              src="/icons/cat.png"
-              width="28"
-              height="28"
-              alt="猫窝"
-              style={activeTab === 'home' ? undefined : { filter: 'grayscale(100%) opacity(0.5)' }}
-            />
+            <div className="cat-paw-icon" />
           ) : (
             tab.icon
           )}
