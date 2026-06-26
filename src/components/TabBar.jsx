@@ -55,7 +55,7 @@ export default function TabBar({ activeTab, onTabChange }) {
         >
           {tab.key === 'home' ? (
             <img
-              src="/icons/cat-paw.png"
+              src="/icons/cat.png"
               width="28"
               height="28"
               alt="猫窝"
