@@ -38,6 +38,8 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
   const [editingId, setEditingId] = useState(null)
   const [editText, setEditText] = useState('')
   const [editLoading, setEditLoading] = useState(false)
+  const [emptyResponseHint, setEmptyResponseHint] = useState(null)
+  const [emptyResponseRetrying, setEmptyResponseRetrying] = useState(false)
   const messagesRef = useRef(null)
   // 'instant' | 'smooth' | null —— 下一次 messages 变化后要不要滚到底部，以及用什么方式滚
   const pendingScrollRef = useRef(null)
@@ -122,8 +124,10 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
     const text = input.trim()
     if (!text || isSending) return
 
+    setEmptyResponseHint(null)
+    const localId = nextLocalId()
     pendingScrollRef.current = 'smooth'
-    setMessages((prev) => [...prev, { id: nextLocalId(), role: 'user', content: text, time: formatTime() }])
+    setMessages((prev) => [...prev, { id: localId, role: 'user', content: text, time: formatTime() }])
     setInput('')
     setIsSending(true)
 
@@ -131,12 +135,18 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
       const reply = await sendChatMessage(sessionId, text)
       pendingScrollRef.current = 'smooth'
       setMessages((prev) => [...prev, { id: nextLocalId(), role: 'assistant', content: reply, time: formatTime() }])
-    } catch {
-      pendingScrollRef.current = 'smooth'
-      setMessages((prev) => [
-        ...prev,
-        { id: nextLocalId(), role: 'assistant', content: '消息没发出去，再试一次吧。', time: formatTime() },
-      ])
+    } catch (err) {
+      if (err.code === 'empty_response' && err.userMessageId) {
+        pendingScrollRef.current = 'smooth'
+        setMessages((prev) => prev.map((m) => (m.id === localId ? { ...m, id: err.userMessageId } : m)))
+        setEmptyResponseHint({ userMessageId: err.userMessageId, content: text })
+      } else {
+        pendingScrollRef.current = 'smooth'
+        setMessages((prev) => [
+          ...prev,
+          { id: nextLocalId(), role: 'assistant', content: '消息没发出去，再试一次吧。', time: formatTime() },
+        ])
+      }
     } finally {
       setIsSending(false)
     }
@@ -188,12 +198,32 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
         return [...kept, toUiMessage(newMsg)]
       })
       pendingScrollRef.current = 'smooth'
+      setEmptyResponseHint(null)
       setEditingId(null)
       setEditText('')
     } catch (err) {
-      console.error('编辑并重新生成失败', err)
+      if (err.code !== 'empty_response') {
+        console.error('编辑并重新生成失败', err)
+      }
     } finally {
       setEditLoading(false)
+    }
+  }
+
+  const handleEmptyResponseRetry = async () => {
+    if (!emptyResponseHint || emptyResponseRetrying) return
+    setEmptyResponseRetrying(true)
+    try {
+      const newMsg = await editAndRegenerateMessage(emptyResponseHint.userMessageId, emptyResponseHint.content)
+      pendingScrollRef.current = 'smooth'
+      setMessages((prev) => [...prev, toUiMessage(newMsg)])
+      setEmptyResponseHint(null)
+    } catch (err) {
+      if (err.code !== 'empty_response') {
+        console.error('重试失败', err)
+      }
+    } finally {
+      setEmptyResponseRetrying(false)
     }
   }
 
@@ -328,6 +358,28 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
             {m.role === 'user' && <Avatar role="user" />}
           </div>
         ))}
+        {emptyResponseHint && !isSending && (
+          <div className="empty-response-hint">
+            <span>小克走神了，再试一次吧</span>
+            <button
+              className={`empty-response-retry-btn${emptyResponseRetrying ? ' retrying' : ''}`}
+              onClick={handleEmptyResponseRetry}
+              disabled={emptyResponseRetrying}
+            >
+              {emptyResponseRetrying ? (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                </svg>
+              ) : (
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="1 4 1 10 7 10" />
+                  <path d="M3.51 15a9 9 0 1 0 .49-4" />
+                </svg>
+              )}
+              重试
+            </button>
+          </div>
+        )}
         {isSending && <TypingIndicator />}
       </div>
 

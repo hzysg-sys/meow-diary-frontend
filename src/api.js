@@ -98,6 +98,12 @@ export async function sendChatMessage(sessionId, message) {
   if (!res.ok) {
     throw new Error(data?.error || `请求失败 (${res.status})`)
   }
+  if (data?.error === 'empty_response') {
+    throw Object.assign(new Error(data.message || ''), {
+      code: 'empty_response',
+      userMessageId: data.userMessageId,
+    })
+  }
   return data.reply
 }
 
@@ -106,6 +112,9 @@ export async function regenerateMessage(id) {
   const data = await res.json().catch(() => null)
   if (!res.ok) {
     throw new Error(data?.error || `重新生成失败 (${res.status})`)
+  }
+  if (data?.error === 'empty_response') {
+    throw Object.assign(new Error(data.message || ''), { code: 'empty_response' })
   }
   return data.content
 }
@@ -119,6 +128,9 @@ export async function editAndRegenerateMessage(id, newContent) {
   const data = await res.json().catch(() => null)
   if (!res.ok) {
     throw new Error(data?.error || `编辑并重新生成失败 (${res.status})`)
+  }
+  if (data?.error === 'empty_response') {
+    throw Object.assign(new Error(data.message || ''), { code: 'empty_response' })
   }
   return data
 }
