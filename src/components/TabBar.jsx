@@ -20,15 +20,7 @@ const TABS = [
   {
     key: 'home',
     label: '猫窝',
-    icon: (
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-        <ellipse cx="12" cy="16" rx="5" ry="3.8" />
-        <ellipse cx="6.5" cy="11.5" rx="2.2" ry="1.7" />
-        <ellipse cx="10" cy="9.2" rx="2.2" ry="1.7" />
-        <ellipse cx="14" cy="9.2" rx="2.2" ry="1.7" />
-        <ellipse cx="17.5" cy="11.5" rx="2.2" ry="1.7" />
-      </svg>
-    ),
+    icon: null,
   },
   {
     key: 'mail',
@@ -61,7 +53,17 @@ export default function TabBar({ activeTab, onTabChange }) {
           className={`tab-item${activeTab === tab.key ? ' active' : ''}`}
           onClick={() => onTabChange(tab.key)}
         >
-          {tab.icon}
+          {tab.key === 'home' ? (
+            <img
+              src="/icons/cat-paw.png"
+              width="28"
+              height="28"
+              alt="猫窝"
+              style={activeTab === 'home' ? undefined : { filter: 'grayscale(100%) opacity(0.5)' }}
+            />
+          ) : (
+            tab.icon
+          )}
           <span className="tab-label">{tab.label}</span>
         </button>
       ))}
