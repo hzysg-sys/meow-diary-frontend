@@ -22,16 +22,11 @@ const TABS = [
     label: '猫窝',
     icon: (
       <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-        {/* 大肉垫 */}
-        <ellipse cx="12" cy="15" rx="4" ry="3.2" />
-        {/* 左上小肉垫 */}
-        <ellipse cx="7" cy="10.5" rx="2" ry="1.6" />
-        {/* 右上小肉垫 */}
-        <ellipse cx="17" cy="10.5" rx="2" ry="1.6" />
-        {/* 左小肉垫 */}
-        <ellipse cx="8.5" cy="13.5" rx="1.6" ry="1.3" />
-        {/* 右小肉垫 */}
-        <ellipse cx="15.5" cy="13.5" rx="1.6" ry="1.3" />
+        <ellipse cx="12" cy="16" rx="5" ry="3.8" />
+        <ellipse cx="6.5" cy="11.5" rx="2.2" ry="1.7" />
+        <ellipse cx="10" cy="9.2" rx="2.2" ry="1.7" />
+        <ellipse cx="14" cy="9.2" rx="2.2" ry="1.7" />
+        <ellipse cx="17.5" cy="11.5" rx="2.2" ry="1.7" />
       </svg>
     ),
   },

@@ -78,7 +78,16 @@ function App() {
           <MailTab show={activeTab === 'mail'} />
           <ReadTab show={activeTab === 'read'} />
         </div>
-        <TabBar activeTab={activeTab} onTabChange={setActiveTab} />
+        <TabBar
+          activeTab={activeTab}
+          onTabChange={(tab) => {
+            if (tab === 'chat') {
+              goChat()
+            } else {
+              setActiveTab(tab)
+            }
+          }}
+        />
       </div>
 
       <PlaceholderView show={view === VIEW.PLACEHOLDER} title={placeholderTitle} onBack={() => goMain('home')} />
