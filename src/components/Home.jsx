@@ -13,7 +13,7 @@ export default function Home({ show, onOpenChat, onOpenPlaceholder, onOpenMemory
   const dayCount = computeDayCount()
 
   return (
-    <div id="home" className={show ? 'show' : ''}>
+    <div id="home" style={{ display: show ? 'block' : 'none' }}>
       <div className="home-hero">
         <p className="home-day-number">{dayCount}</p>
         <p className="home-day-text">

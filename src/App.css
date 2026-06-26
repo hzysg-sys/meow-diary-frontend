@@ -72,11 +72,80 @@
   margin-top: 36px;
 }
 
-/* Home */
-#home {
+/* Main view (Tab Bar layout) */
+#main-view {
   display: none;
   height: 100vh;
   height: 100dvh;
+  width: 100%;
+  flex-direction: column;
+}
+#main-view.show {
+  display: flex;
+}
+.main-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Tab Bar */
+.tab-bar {
+  display: flex;
+  background: #fff;
+  border-top: 1px solid #f0e8e8;
+  padding-bottom: env(safe-area-inset-bottom);
+  flex-shrink: 0;
+}
+.tab-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 56px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #999;
+  padding: 0;
+  transition: color 0.15s;
+}
+.tab-item.active {
+  color: #c98a98;
+}
+.tab-label {
+  font-size: 10px;
+  letter-spacing: 0.3px;
+}
+
+/* Tab placeholder pages */
+.tab-placeholder {
+  height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background-color: #ffebef;
+  background-image: url('/backgrounds/home-bg.png');
+  background-size: cover;
+  background-position: center top;
+}
+.tab-placeholder-text {
+  font-size: 14px;
+  color: #c4aaae;
+  letter-spacing: 0.5px;
+}
+.tab-placeholder-emoji {
+  font-size: 20px;
+  margin-top: 2px;
+}
+
+/* Home */
+#home {
+  height: 100%;
   width: 100%;
   overflow-y: auto;
   background-color: #ffebef;
@@ -85,9 +154,6 @@
   background-position: center top;
   background-repeat: no-repeat;
   padding: 56px 18px 36px;
-}
-#home.show {
-  display: block;
 }
 .home-hero {
   text-align: center;
