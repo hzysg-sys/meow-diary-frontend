@@ -132,6 +132,29 @@ export async function pokeAssistant(sessionId) {
   return data.message
 }
 
+export async function fetchHealthRecords(month) {
+  const res = await fetch(`${API_BASE_URL}/api/health/records?month=${month}`)
+  if (!res.ok) throw new Error(`加载健康记录失败 (${res.status})`)
+  return res.json()
+}
+
+export async function saveHealthRecord(record) {
+  const res = await fetch(`${API_BASE_URL}/api/health/records`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(record),
+  })
+  const data = await res.json().catch(() => null)
+  if (!res.ok) throw new Error(data?.error || `保存失败 (${res.status})`)
+  return data
+}
+
+export async function fetchPeriodPrediction() {
+  const res = await fetch(`${API_BASE_URL}/api/health/period-prediction`)
+  if (!res.ok) throw new Error(`加载预测失败 (${res.status})`)
+  return res.json()
+}
+
 export async function editAndRegenerateMessage(id, newContent) {
   const res = await fetch(`${API_BASE_URL}/api/messages/${id}/edit-and-regenerate`, {
     method: 'POST',

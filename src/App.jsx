@@ -74,7 +74,7 @@ function App() {
             onOpenMemory={goMemory}
           />
           <ChatListTab show={activeTab === 'chat'} />
-          <HealthTab show={activeTab === 'health'} />
+          <HealthTab active={activeTab === 'health'} />
           <MailTab show={activeTab === 'mail'} />
           <ReadTab show={activeTab === 'read'} />
         </div>

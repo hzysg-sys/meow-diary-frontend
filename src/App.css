@@ -1053,3 +1053,363 @@
 .save-btn:hover {
   background: #f3a8bc;
 }
+
+/* ======== Health Tab ======== */
+#health-tab {
+  height: 100%;
+  flex-direction: column;
+  overflow-y: auto;
+  background: #fff9fb;
+  -webkit-overflow-scrolling: touch;
+}
+
+.health-month-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 14px 16px 6px;
+  flex-shrink: 0;
+}
+.health-nav-btn {
+  background: none;
+  border: none;
+  font-size: 22px;
+  color: #c98a98;
+  cursor: pointer;
+  padding: 0 6px;
+  line-height: 1;
+}
+.health-month-label {
+  font-size: 16px;
+  font-weight: 600;
+  color: #57534e;
+  min-width: 90px;
+  text-align: center;
+}
+
+.health-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 4px 16px 8px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.health-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #9b8a8c;
+}
+.health-legend-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(0,0,0,0.06);
+  flex-shrink: 0;
+}
+.health-legend-dashed {
+  background: transparent;
+  border: 1.5px dashed #c98a98;
+}
+.health-legend-solid {
+  background: transparent;
+  border: 2px solid #c98a98;
+}
+
+.health-calendar {
+  padding: 0 10px 8px;
+  flex-shrink: 0;
+}
+.health-cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  margin-bottom: 2px;
+}
+.health-cal-wd {
+  text-align: center;
+  font-size: 11px;
+  color: #c4aaae;
+  padding: 4px 0;
+}
+.health-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+.health-cal-cell {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  box-sizing: border-box;
+  min-width: 0;
+}
+.health-cal-cell.has-date {
+  cursor: pointer;
+}
+.health-cal-cell.has-date:active {
+  opacity: 0.75;
+}
+.health-cal-day {
+  font-size: 13px;
+  color: #57534e;
+  line-height: 1;
+}
+.health-cal-dot {
+  position: absolute;
+  bottom: 3px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #c98a98;
+}
+
+.health-panel {
+  flex: 1;
+  padding: 4px 14px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.health-panel-date {
+  font-size: 13px;
+  color: #a09090;
+  text-align: center;
+  padding: 0 0 4px;
+}
+
+.health-card {
+  background: #fff;
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: 0 1px 6px rgba(180, 120, 130, 0.08);
+  border: 1px solid #f5e8ea;
+}
+.health-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.health-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #57534e;
+  display: block;
+  margin-bottom: 10px;
+}
+.health-card-row .health-card-title {
+  margin-bottom: 0;
+}
+.health-card-body {
+  margin-top: 12px;
+}
+
+/* Toggle switch */
+.health-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+.health-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.health-toggle-track {
+  width: 40px;
+  height: 22px;
+  background: #e0d0d2;
+  border-radius: 11px;
+  position: relative;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.health-toggle input:checked + .health-toggle-track {
+  background: #c98a98;
+}
+.health-toggle-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+  transition: transform 0.2s;
+}
+.health-toggle input:checked + .health-toggle-track .health-toggle-thumb {
+  transform: translateX(18px);
+}
+
+.health-field-label {
+  font-size: 12px;
+  color: #a09090;
+  margin: 8px 0 6px;
+}
+.health-field-label:first-child {
+  margin-top: 0;
+}
+
+.health-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 4px;
+}
+.health-pill {
+  background: #f5edf0;
+  border: 1.5px solid transparent;
+  border-radius: 20px;
+  padding: 5px 13px;
+  font-size: 13px;
+  color: #7a6468;
+  cursor: pointer;
+  transition: all 0.15s;
+  line-height: 1;
+}
+.health-pill.active {
+  background: #fce4ec;
+  border-color: #c98a98;
+  color: #c98a98;
+}
+.health-text-input {
+  width: 100%;
+  border: 1px solid #f0e0e4;
+  border-radius: 10px;
+  padding: 7px 10px;
+  font-size: 13px;
+  color: #57534e;
+  outline: none;
+  font-family: inherit;
+  margin-top: 8px;
+  box-sizing: border-box;
+  background: #fdf5f7;
+}
+
+/* Mood */
+.health-mood-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.health-mood-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  background: #f9f2f4;
+  border: 1.5px solid transparent;
+  border-radius: 12px;
+  padding: 8px 2px 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.health-mood-btn.active {
+  background: #fce4ec;
+  border-color: #c98a98;
+}
+.health-mood-emoji {
+  font-size: 20px;
+  line-height: 1;
+}
+.health-mood-label {
+  font-size: 10px;
+  color: #9b8a8c;
+}
+.health-mood-btn.active .health-mood-label {
+  color: #c98a98;
+}
+.health-textarea {
+  width: 100%;
+  border: 1px solid #f0e0e4;
+  border-radius: 12px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #57534e;
+  resize: none;
+  outline: none;
+  font-family: inherit;
+  background: #fdf5f7;
+  box-sizing: border-box;
+  line-height: 1.5;
+}
+
+/* Sleep */
+.health-sleep-row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.health-sleep-field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.health-time-input {
+  border: 1px solid #f0e0e4;
+  border-radius: 10px;
+  padding: 7px 10px;
+  font-size: 14px;
+  color: #57534e;
+  outline: none;
+  background: #fdf5f7;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.health-stars {
+  display: flex;
+  gap: 6px;
+  margin-top: 2px;
+}
+.health-star {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #e0cfd1;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  transition: color 0.15s;
+}
+.health-star.active {
+  color: #c98a98;
+}
+
+.health-save-btn {
+  width: 100%;
+  background: #c98a98;
+  border: none;
+  border-radius: 16px;
+  padding: 14px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.2s;
+  margin-top: 4px;
+}
+.health-save-btn:hover:not(:disabled) {
+  background: #b87888;
+}
+.health-save-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.health-save-btn.saved {
+  background: #4caf50;
+}
