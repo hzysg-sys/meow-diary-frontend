@@ -41,7 +41,7 @@ function recordToForm(rec) {
   }
 }
 
-export default function HealthTab({ active }) {
+export default function HealthTab({ active, onNavigateToChat }) {
   const today = new Date()
   const todayStr = formatDate(today)
 
@@ -52,6 +52,7 @@ export default function HealthTab({ active }) {
   const [selectedDate, setSelectedDate] = useState(todayStr)
   const [form, setForm] = useState(emptyForm())
   const [saveStatus, setSaveStatus] = useState('idle')
+  const [careMessage, setCareMessage] = useState(null)
 
   const monthStr = `${year}-${String(month).padStart(2, '0')}`
 
@@ -128,8 +129,9 @@ export default function HealthTab({ active }) {
 
   async function handleSave() {
     setSaveStatus('saving')
+    setCareMessage(null)
     try {
-      await saveHealthRecord({
+      const result = await saveHealthRecord({
         date: selectedDate,
         period_active: form.period_active,
         period_flow: form.period_active ? form.period_flow : null,
@@ -143,6 +145,7 @@ export default function HealthTab({ active }) {
       })
       setSaveStatus('saved')
       setTimeout(() => setSaveStatus('idle'), 1500)
+      if (result?.care_message) setCareMessage(result.care_message)
       await loadData()
     } catch (e) {
       console.error('保存失败:', e)
@@ -325,12 +328,26 @@ export default function HealthTab({ active }) {
           </div>
         </div>
 
+        {/* 关心消息提示卡片 */}
+        {careMessage && (
+          <div className="health-care-toast">
+            <span className="health-care-text">小克有话想对你说 💌</span>
+            <div className="health-care-actions">
+              <button
+                className="health-care-goto"
+                onClick={() => { onNavigateToChat(careMessage.session_id); setCareMessage(null) }}
+              >去看看</button>
+              <button className="health-care-close" onClick={() => setCareMessage(null)}>×</button>
+            </div>
+          </div>
+        )}
+
         <button
           className={`health-save-btn${saveStatus === 'saved' ? ' saved' : ''}`}
           disabled={saveStatus === 'saving'}
           onClick={handleSave}
         >
-          {saveStatus === 'saved' ? '✓ 已保存' : '保存记录'}
+          {saveStatus === 'saving' ? '保存中...' : saveStatus === 'saved' ? '✓ 已保存' : '保存记录'}
         </button>
       </div>
     </div>

@@ -35,7 +35,12 @@ function App() {
     setView(VIEW.MAIN)
   }
 
-  async function goChat() {
+  async function goChat(sessionId) {
+    if (sessionId != null) {
+      setCurrentSessionId(sessionId)
+      setView(VIEW.CHAT)
+      return
+    }
     if (currentSessionId == null) {
       try {
         const sessions = await fetchSessions()
@@ -74,7 +79,7 @@ function App() {
             onOpenMemory={goMemory}
           />
           <ChatListTab show={activeTab === 'chat'} />
-          <HealthTab active={activeTab === 'health'} />
+          <HealthTab active={activeTab === 'health'} onNavigateToChat={(sid) => goChat(sid)} />
           <MailTab show={activeTab === 'mail'} />
           <ReadTab show={activeTab === 'read'} />
         </div>
