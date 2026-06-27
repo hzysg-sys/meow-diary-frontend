@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
-import { fetchHealthRecords, saveHealthRecord, fetchPeriodPrediction } from '../api'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { fetchHealthRecords, saveHealthRecord, fetchPeriodPrediction, fetchHistory } from '../api'
 
 const MOOD_OPTIONS = [
   { value: 0, emoji: '😊', label: '开心' },
@@ -54,6 +54,9 @@ export default function HealthTab({ active, onNavigateToChat }) {
   const [saveStatus, setSaveStatus] = useState('idle')
   const [careMessage, setCareMessage] = useState(null)
 
+  const careToastRef = useRef(null)
+  const pollTimerRef = useRef(null)
+
   const monthStr = `${year}-${String(month).padStart(2, '0')}`
 
   const loadData = useCallback(async () => {
@@ -81,6 +84,18 @@ export default function HealthTab({ active, onNavigateToChat }) {
     setForm(recordToForm(records[selectedDate]))
     setSaveStatus('idle')
   }, [selectedDate, records])
+
+  // 当 careMessage 出现时，滚动到 toast 让用户看到
+  useEffect(() => {
+    if (careMessage && careToastRef.current) {
+      careToastRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  }, [careMessage])
+
+  // 组件卸载时清理轮询
+  useEffect(() => {
+    return () => { if (pollTimerRef.current) clearTimeout(pollTimerRef.current) }
+  }, [])
 
   function prevMonth() {
     if (month === 1) { setYear(y => y - 1); setMonth(12) }
@@ -127,10 +142,46 @@ export default function HealthTab({ active, onNavigateToChat }) {
     setForm(f => ({ ...f, symptoms: f.symptoms.includes(s) ? f.symptoms.filter(x => x !== s) : [...f.symptoms, s] }))
   }
 
+  // 保存完成后轮询 session，等待小克的关心消息出现
+  function startPollingCareMessage(sessionId, pollStartIso) {
+    if (pollTimerRef.current) clearTimeout(pollTimerRef.current)
+    let attempts = 0
+    const MAX = 15 // 最多 45 秒（每 3s 一次）
+
+    function poll() {
+      if (attempts >= MAX) {
+        console.log('[HealthTab] 轮询超时，未检测到关心消息')
+        return
+      }
+      attempts++
+      fetchHistory(sessionId, { limit: 10 })
+        .then(({ messages }) => {
+          console.log(`[HealthTab] 轮询第${attempts}次，消息数:`, messages?.length)
+          // 找到保存时间之后新出现的 assistant 消息
+          const newMsg = messages?.find(m => m.role === 'assistant' && m.created_at > pollStartIso)
+          if (newMsg) {
+            console.log('[HealthTab] 找到关心消息:', newMsg.content?.slice(0, 40))
+            setCareMessage({ session_id: sessionId, content: newMsg.content })
+          } else {
+            pollTimerRef.current = setTimeout(poll, 3000)
+          }
+        })
+        .catch(() => {
+          pollTimerRef.current = setTimeout(poll, 3000)
+        })
+    }
+
+    // 初始等 2 秒再开始轮询（给后台 AI 调用一点启动时间）
+    pollTimerRef.current = setTimeout(poll, 2000)
+  }
+
   async function handleSave() {
     setSaveStatus('saving')
     setCareMessage(null)
+    if (pollTimerRef.current) clearTimeout(pollTimerRef.current)
+
     try {
+      const pollStartIso = new Date().toISOString()
       const result = await saveHealthRecord({
         date: selectedDate,
         period_active: form.period_active,
@@ -143,12 +194,20 @@ export default function HealthTab({ active, onNavigateToChat }) {
         sleep_wake: form.sleep_wake || null,
         sleep_quality: form.sleep_quality,
       })
+
+      console.log('[HealthTab] POST /api/health/records 响应:', result)
+      console.log('[HealthTab] care_session_id:', result?.care_session_id)
+
       setSaveStatus('saved')
       setTimeout(() => setSaveStatus('idle'), 1500)
-      if (result?.care_message) setCareMessage(result.care_message)
       await loadData()
+
+      if (result?.care_session_id != null) {
+        console.log('[HealthTab] 开始轮询 session', result.care_session_id, '的关心消息')
+        startPollingCareMessage(result.care_session_id, pollStartIso)
+      }
     } catch (e) {
-      console.error('保存失败:', e)
+      console.error('[HealthTab] 保存失败:', e)
       setSaveStatus('idle')
     }
   }
@@ -330,7 +389,7 @@ export default function HealthTab({ active, onNavigateToChat }) {
 
         {/* 关心消息提示卡片 */}
         {careMessage && (
-          <div className="health-care-toast">
+          <div className="health-care-toast" ref={careToastRef}>
             <span className="health-care-text">小克有话想对你说 💌</span>
             <div className="health-care-actions">
               <button
