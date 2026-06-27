@@ -1059,7 +1059,12 @@
   height: 100%;
   flex-direction: column;
   overflow-y: auto;
-  background: #fff9fb;
+  background-color: #ffebef;
+  background-image: url('/backgrounds/home-bg.png');
+  background-size: cover;
+  background-position: center top;
+  background-repeat: no-repeat;
+  background-attachment: local;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -1070,6 +1075,9 @@
   gap: 20px;
   padding: 14px 16px 6px;
   flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: 16px 16px 0 0;
+  margin: 10px 10px 0;
 }
 .health-nav-btn {
   background: none;
@@ -1096,6 +1104,8 @@
   padding: 4px 16px 8px;
   flex-shrink: 0;
   flex-wrap: wrap;
+  background: rgba(255, 255, 255, 0.55);
+  margin: 0 10px;
 }
 .health-legend-item {
   display: flex;
@@ -1124,6 +1134,9 @@
 .health-calendar {
   padding: 0 10px 8px;
   flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: 16px;
+  margin: 0 10px 4px;
 }
 .health-cal-weekdays {
   display: grid;
