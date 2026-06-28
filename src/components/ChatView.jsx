@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { fetchHistory, sendChatMessage, regenerateMessage, editAndRegenerateMessage, pokeAssistant } from '../api'
+import { fetchHistory, fetchSessions, sendChatMessage, regenerateMessage, editAndRegenerateMessage, pokeAssistant } from '../api'
 import Avatar from './Avatar'
 import TypingIndicator from './TypingIndicator'
 import { BackIcon, MenuIcon, SettingsIcon, SendIcon } from './icons'
@@ -49,25 +49,34 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
   const prependRestoreRef = useRef(null)
 
   useEffect(() => {
-    if (sessionId == null) return
     let cancelled = false
-    fetchHistory(sessionId, { limit: PAGE_SIZE })
-      .then(({ messages: history, hasMore: more }) => {
-        if (cancelled) return
-        setMessages(history.map(toUiMessage))
-        setHasMore(more)
-        pendingScrollRef.current = 'instant'
-      })
-      .catch((err) => {
-        if (cancelled) return
-        setHistoryError(err.message)
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingHistory(false)
-      })
-    return () => {
-      cancelled = true
+
+    const loadHistory = (id) => {
+      fetchHistory(id, { limit: PAGE_SIZE })
+        .then(({ messages: history, hasMore: more }) => {
+          if (cancelled) return
+          setMessages(history.map(toUiMessage))
+          setHasMore(more)
+          pendingScrollRef.current = 'instant'
+        })
+        .catch((err) => { if (!cancelled) setHistoryError(err.message) })
+        .finally(() => { if (!cancelled) setLoadingHistory(false) })
     }
+
+    if (Number.isInteger(sessionId)) {
+      loadHistory(sessionId)
+    } else {
+      // sessionId 为空或 NaN，自动取最新会话
+      fetchSessions()
+        .then((sessions) => {
+          if (cancelled) return
+          if (sessions.length > 0) loadHistory(sessions[0].id)
+          else { setLoadingHistory(false) }
+        })
+        .catch((err) => { if (!cancelled) { setHistoryError(err.message); setLoadingHistory(false) } })
+    }
+
+    return () => { cancelled = true }
   }, [sessionId])
 
   // 面板靠外层 #app 的 show class 控制显隐，ChatView 一直挂载着不会重新 mount——

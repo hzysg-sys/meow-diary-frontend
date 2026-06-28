@@ -24,7 +24,7 @@ export default function Home({ show, onOpenChat, onOpenPlaceholder, onOpenMemory
       </div>
 
       <div className="home-grid">
-        <button className="home-card home-card-lg" onClick={onOpenChat}>
+        <button className="home-card home-card-lg" onClick={() => onOpenChat()}>
           <div className="home-card-icon">
             <ChatCardIcon />
           </div>
