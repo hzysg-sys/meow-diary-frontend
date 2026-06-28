@@ -46,7 +46,7 @@ export default function HealthTab({ active, onNavigateToChat }) {
   const [selectedDate, setSelectedDate] = useState(todayStr)
   const [form, setForm] = useState(emptyForm())
   const [saveStatus, setSaveStatus] = useState('idle')
-  const [careMessage, setCareMessage] = useState(null)
+  const [careMessage, setCareMessage] = useState(false)
 
   const careToastRef = useRef(null)
 
@@ -132,7 +132,7 @@ export default function HealthTab({ active, onNavigateToChat }) {
 
   async function handleSave() {
     setSaveStatus('saving')
-    setCareMessage(null)
+    setCareMessage(false)
     try {
       const result = await saveHealthRecord({
         date: selectedDate,
@@ -147,16 +147,13 @@ export default function HealthTab({ active, onNavigateToChat }) {
         sleep_quality: form.sleep_quality,
       })
 
-      console.log('[HealthTab] save response:', result)
-      console.log('[HealthTab] care_message:', result?.care_message)
-
-      if (result?.care_message) {
-        setCareMessage(result.care_message)
-      }
-
       setSaveStatus('saved')
       setTimeout(() => setSaveStatus('idle'), 1500)
       await loadData()
+
+      if (result?.should_trigger) {
+        setTimeout(() => setCareMessage(true), 3000)
+      }
     } catch (e) {
       console.error('[HealthTab] 保存失败:', e)
       setSaveStatus('idle')
@@ -345,9 +342,9 @@ export default function HealthTab({ active, onNavigateToChat }) {
             <div className="health-care-actions">
               <button
                 className="health-care-goto"
-                onClick={() => { onNavigateToChat(careMessage.session_id); setCareMessage(null) }}
+                onClick={() => { onNavigateToChat(null); setCareMessage(false) }}
               >去看看</button>
-              <button className="health-care-close" onClick={() => setCareMessage(null)}>×</button>
+              <button className="health-care-close" onClick={() => setCareMessage(false)}>×</button>
             </div>
           </div>
         )}
