@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { fetchHealthRecords, saveHealthRecord, fetchPeriodPrediction } from '../api'
 
 const MOOD_OPTIONS = [
@@ -46,9 +46,6 @@ export default function HealthTab({ active, onNavigateToChat }) {
   const [selectedDate, setSelectedDate] = useState(todayStr)
   const [form, setForm] = useState(emptyForm())
   const [saveStatus, setSaveStatus] = useState('idle')
-  const [careMessage, setCareMessage] = useState(false)
-
-  const careToastRef = useRef(null)
 
   const monthStr = `${year}-${String(month).padStart(2, '0')}`
 
@@ -77,13 +74,6 @@ export default function HealthTab({ active, onNavigateToChat }) {
     setForm(recordToForm(records[selectedDate]))
     setSaveStatus('idle')
   }, [selectedDate, records])
-
-  // care toast 出现时自动滚进视野
-  useEffect(() => {
-    if (careMessage && careToastRef.current) {
-      careToastRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-    }
-  }, [careMessage])
 
   function prevMonth() {
     if (month === 1) { setYear(y => y - 1); setMonth(12) }
@@ -132,9 +122,8 @@ export default function HealthTab({ active, onNavigateToChat }) {
 
   async function handleSave() {
     setSaveStatus('saving')
-    setCareMessage(false)
     try {
-      const result = await saveHealthRecord({
+      await saveHealthRecord({
         date: selectedDate,
         period_active: form.period_active,
         period_flow: form.period_active ? form.period_flow : null,
@@ -150,10 +139,6 @@ export default function HealthTab({ active, onNavigateToChat }) {
       setSaveStatus('saved')
       setTimeout(() => setSaveStatus('idle'), 1500)
       await loadData()
-
-      if (result?.should_trigger) {
-        setTimeout(() => setCareMessage(true), 3000)
-      }
     } catch (e) {
       console.error('[HealthTab] 保存失败:', e)
       setSaveStatus('idle')
@@ -334,20 +319,6 @@ export default function HealthTab({ active, onNavigateToChat }) {
             ))}
           </div>
         </div>
-
-        {/* 关心消息提示卡片 */}
-        {careMessage && (
-          <div className="health-care-toast" ref={careToastRef}>
-            <span className="health-care-text">小克有话想对你说 💌</span>
-            <div className="health-care-actions">
-              <button
-                className="health-care-goto"
-                onClick={() => { onNavigateToChat(null); setCareMessage(false) }}
-              >去看看</button>
-              <button className="health-care-close" onClick={() => setCareMessage(false)}>×</button>
-            </div>
-          </div>
-        )}
 
         <button
           className={`health-save-btn${saveStatus === 'saved' ? ' saved' : ''}`}
