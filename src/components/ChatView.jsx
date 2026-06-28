@@ -47,6 +47,7 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
   const pendingScrollRef = useRef(null)
   // 往上翻页（prepend）专用：记录插入前的 scrollHeight/scrollTop，插入后用差值修正，避免画面跳动
   const prependRestoreRef = useRef(null)
+  const prevActiveRef = useRef(null)
 
   useEffect(() => {
     let cancelled = false
@@ -101,6 +102,25 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
       pendingScrollRef.current = null
     }
   }, [active, messages])
+
+  // 从其他 tab 切回聊天页时（active false→true），重拉最新一页消息
+  useEffect(() => {
+    const wasActive = prevActiveRef.current
+    prevActiveRef.current = active
+
+    if (!active || wasActive !== false) return
+
+    const id = Number.isInteger(sessionId) ? sessionId : null
+    if (!id) return
+
+    fetchHistory(id, { limit: PAGE_SIZE })
+      .then(({ messages: newPage, hasMore: more }) => {
+        setMessages(newPage.map(toUiMessage))
+        setHasMore(more)
+        pendingScrollRef.current = 'smooth'
+      })
+      .catch(() => {})
+  }, [active, sessionId])
 
   const loadMoreHistory = useCallback(async () => {
     if (loadingMore || !hasMore) return
