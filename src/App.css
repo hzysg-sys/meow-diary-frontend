@@ -1079,7 +1079,8 @@
   margin-bottom: 6px;
 }
 .field textarea,
-.field input[type='number'] {
+.field input[type='number'],
+.field select {
   width: 100%;
   border: 1px solid #f6e3e8;
   border-radius: 14px;
@@ -1091,6 +1092,11 @@
 }
 .field textarea {
   resize: none;
+}
+.field select {
+  background: #fff;
+  cursor: pointer;
+  box-sizing: border-box;
 }
 .field input[type='range'] {
   width: 100%;

@@ -2,11 +2,20 @@ import { useEffect, useState } from 'react'
 import { CloseIcon } from './icons'
 import { fetchSettings, updateSettings } from '../api'
 
+const MODEL_OPTIONS = [
+  { label: '✦ Sonnet 4.5 (官转)', value: '[官转1] claude-sonnet-4-5' },
+  { label: 'Sonnet 4.6', value: '[按量6] claude-sonnet-4.6 [不补]' },
+  { label: 'Opus 4.5', value: '[按量6] claude-opus-4.5 [不补]' },
+  { label: 'Opus 4.6', value: '[按量6] claude-opus-4.6 [不补]' },
+  { label: 'Opus 4.8', value: '[按量6] claude-opus-4.8 [不补]' },
+]
+
 const DEFAULT_SETTINGS = {
   systemPrompt: '',
   temperature: 0.7,
   contextTurns: 20,
   maxTokens: 800,
+  modelName: MODEL_OPTIONS[0].value,
 }
 
 export default function SettingsModal({ open, onClose }) {
@@ -25,7 +34,8 @@ export default function SettingsModal({ open, onClose }) {
     fetchSettings()
       .then((data) => {
         if (cancelled) return
-        setForm(data)
+        const matched = MODEL_OPTIONS.some((o) => o.value === data.modelName)
+        setForm({ ...data, modelName: matched ? data.modelName : MODEL_OPTIONS[0].value })
       })
       .catch((err) => {
         if (cancelled) return
@@ -71,6 +81,17 @@ export default function SettingsModal({ open, onClose }) {
           </button>
         </div>
         {loading && <p style={{ textAlign: 'center', fontSize: 13, color: '#a8a29e' }}>正在加载设置...</p>}
+        <div className="field">
+          <label>模型</label>
+          <select
+            value={form.modelName}
+            onChange={(e) => setForm({ ...form, modelName: e.target.value })}
+          >
+            {MODEL_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
         <div className="field">
           <label>人设 / 系统提示词</label>
           <textarea
