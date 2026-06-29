@@ -17,7 +17,14 @@ function formatTime(isoString) {
 }
 
 function toUiMessage(m) {
-  return { id: m.id, role: m.role, content: m.content, image_url: m.image_url || null, time: formatTime(m.created_at) }
+  return {
+    id: m.id,
+    role: m.role,
+    content: m.content,
+    image_url: m.image_url || null,
+    reasoning_content: m.reasoning_content || null,
+    time: formatTime(m.created_at),
+  }
 }
 
 function compressImage(file) {
@@ -76,6 +83,7 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
   const [pokingAvatarId, setPokingAvatarId] = useState(null)
   const [pendingImage, setPendingImage] = useState(null)
   const [lightboxUrl, setLightboxUrl] = useState(null)
+  const [expandedThinking, setExpandedThinking] = useState({})
   const pokeCooldownRef = useRef(false)
   const messagesRef = useRef(null)
   const fileInputRef = useRef(null)
@@ -220,14 +228,14 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
     setIsSending(true)
 
     try {
-      const reply = await sendChatMessage(
+      const { reply, reasoning_content } = await sendChatMessage(
         sessionId,
         text,
         imageToSend?.base64 || null,
         imageToSend?.type || null,
       )
       pendingScrollRef.current = 'smooth'
-      setMessages((prev) => [...prev, { id: nextLocalId(), role: 'assistant', content: reply, time: formatTime() }])
+      setMessages((prev) => [...prev, { id: nextLocalId(), role: 'assistant', content: reply, reasoning_content: reasoning_content || null, time: formatTime() }])
     } catch (err) {
       if (err.code === 'empty_response' && err.userMessageId) {
         pendingScrollRef.current = 'smooth'
@@ -255,9 +263,11 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
     if (regeneratingId) return
     setRegeneratingId(id)
     try {
-      const content = await regenerateMessage(id)
-      if (content) {
-        setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, content } : m)))
+      const result = await regenerateMessage(id)
+      if (result?.content) {
+        setMessages((prev) => prev.map((m) =>
+          m.id === id ? { ...m, content: result.content, reasoning_content: result.reasoning_content || null } : m
+        ))
       }
     } catch (err) {
       console.error('重新生成失败', err)
@@ -382,6 +392,19 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
               </div>
             )}
             <div className="msg-wrap">
+              {m.role === 'assistant' && m.reasoning_content && (
+                <div className="thinking-block">
+                  <button
+                    className="thinking-toggle"
+                    onClick={() => setExpandedThinking((prev) => ({ ...prev, [m.id]: !prev[m.id] }))}
+                  >
+                    💭 Thought process {expandedThinking[m.id] ? '▲' : '▼'}
+                  </button>
+                  {expandedThinking[m.id] && (
+                    <div className="thinking-content">{m.reasoning_content}</div>
+                  )}
+                </div>
+              )}
               {editingId === m.id ? (
                 <>
                   <div className="bubble edit-bubble">

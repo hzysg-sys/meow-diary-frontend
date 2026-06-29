@@ -109,7 +109,7 @@ export async function sendChatMessage(sessionId, content, imageBase64 = null, im
       userMessageId: data.userMessageId,
     })
   }
-  return data.reply
+  return { reply: data.reply, reasoning_content: data.reasoning_content || null }
 }
 
 export async function regenerateMessage(id) {
@@ -121,7 +121,7 @@ export async function regenerateMessage(id) {
   if (data?.error === 'empty_response') {
     throw Object.assign(new Error(data.message || ''), { code: 'empty_response' })
   }
-  return data.content
+  return { content: data.content, reasoning_content: data.reasoning_content || null }
 }
 
 export async function pokeAssistant(sessionId) {

@@ -1002,6 +1002,31 @@
   line-height: 1;
 }
 
+.thinking-block {
+  margin-bottom: 4px;
+}
+.thinking-toggle {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  color: #999;
+  padding: 2px 0;
+  text-align: left;
+}
+.thinking-toggle:hover {
+  color: #777;
+}
+.thinking-content {
+  background: #f5f5f5;
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 13px;
+  color: #666;
+  white-space: pre-wrap;
+  margin-top: 4px;
+}
+
 .lightbox-overlay {
   position: fixed;
   inset: 0;
