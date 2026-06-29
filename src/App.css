@@ -957,6 +957,68 @@
   cursor: default;
 }
 
+#img-btn {
+  background: none;
+  border: none;
+  color: #ccc;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+#img-btn:hover {
+  color: #e89aae;
+}
+
+.pending-image-preview {
+  padding: 0 14px 8px;
+}
+.pending-image-wrap {
+  position: relative;
+  display: inline-block;
+}
+.pending-image-wrap img {
+  max-height: 80px;
+  border-radius: 8px;
+  display: block;
+}
+.pending-image-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  font-size: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+}
+
+.lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.lightbox-img {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
 #overlay {
   position: fixed;
   inset: 0;

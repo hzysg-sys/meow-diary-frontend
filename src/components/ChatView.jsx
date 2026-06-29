@@ -17,7 +17,40 @@ function formatTime(isoString) {
 }
 
 function toUiMessage(m) {
-  return { id: m.id, role: m.role, content: m.content, time: formatTime(m.created_at) }
+  return { id: m.id, role: m.role, content: m.content, image_url: m.image_url || null, time: formatTime(m.created_at) }
+}
+
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = reject
+    reader.onload = (e) => {
+      const img = new Image()
+      img.onerror = reject
+      img.onload = () => {
+        let { width, height } = img
+        const MAX = 1280
+        if (width > MAX || height > MAX) {
+          if (width > height) {
+            height = Math.round((height * MAX) / width)
+            width = MAX
+          } else {
+            width = Math.round((width * MAX) / height)
+            height = MAX
+          }
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height)
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.8)
+        const base64 = dataUrl.split(',')[1]
+        resolve({ base64, type: 'jpeg' })
+      }
+      img.src = e.target.result
+    }
+    reader.readAsDataURL(file)
+  })
 }
 
 let localIdCounter = -1
@@ -41,8 +74,11 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
   const [emptyResponseHint, setEmptyResponseHint] = useState(null)
   const [emptyResponseRetrying, setEmptyResponseRetrying] = useState(false)
   const [pokingAvatarId, setPokingAvatarId] = useState(null)
+  const [pendingImage, setPendingImage] = useState(null)
+  const [lightboxUrl, setLightboxUrl] = useState(null)
   const pokeCooldownRef = useRef(false)
   const messagesRef = useRef(null)
+  const fileInputRef = useRef(null)
   // 'instant' | 'smooth' | null —— 下一次 messages 变化后要不要滚到底部，以及用什么方式滚
   const pendingScrollRef = useRef(null)
   // 往上翻页（prepend）专用：记录插入前的 scrollHeight/scrollTop，插入后用差值修正，避免画面跳动
@@ -151,19 +187,45 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
     }
   }
 
+  const handleImageSelect = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    try {
+      const { base64, type } = await compressImage(file)
+      const previewUrl = `data:image/jpeg;base64,${base64}`
+      setPendingImage({ base64, type, previewUrl })
+    } catch (err) {
+      console.error('图片处理失败', err)
+    }
+  }
+
   async function handleSend() {
     const text = input.trim()
-    if (!text || isSending) return
+    if ((!text && !pendingImage) || isSending) return
 
     setEmptyResponseHint(null)
     const localId = nextLocalId()
+    const imageToSend = pendingImage
+    setPendingImage(null)
     pendingScrollRef.current = 'smooth'
-    setMessages((prev) => [...prev, { id: localId, role: 'user', content: text, time: formatTime() }])
+    setMessages((prev) => [...prev, {
+      id: localId,
+      role: 'user',
+      content: text,
+      image_url: imageToSend?.previewUrl || null,
+      time: formatTime(),
+    }])
     setInput('')
     setIsSending(true)
 
     try {
-      const reply = await sendChatMessage(sessionId, text)
+      const reply = await sendChatMessage(
+        sessionId,
+        text,
+        imageToSend?.base64 || null,
+        imageToSend?.type || null,
+      )
       pendingScrollRef.current = 'smooth'
       setMessages((prev) => [...prev, { id: nextLocalId(), role: 'assistant', content: reply, time: formatTime() }])
     } catch (err) {
@@ -359,7 +421,24 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
                 </>
               ) : (
                 <>
-                  <div className="bubble">{m.content}</div>
+                  <div className="bubble">
+                    {m.image_url && (
+                      <img
+                        src={m.image_url}
+                        alt="图片"
+                        style={{
+                          maxWidth: '200px',
+                          maxHeight: '200px',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          display: 'block',
+                          marginBottom: m.content ? '6px' : '0',
+                        }}
+                        onClick={() => setLightboxUrl(m.image_url)}
+                      />
+                    )}
+                    {m.content}
+                  </div>
                   <div className="msg-footer">
                     <div className="msg-time">{m.time}</div>
                     <div className="msg-actions">
@@ -439,7 +518,29 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
       </div>
 
       <div className="input-bar">
+        {pendingImage && (
+          <div className="pending-image-preview">
+            <div className="pending-image-wrap">
+              <img src={pendingImage.previewUrl} alt="预览" />
+              <button className="pending-image-remove" onClick={() => setPendingImage(null)}>✕</button>
+            </div>
+          </div>
+        )}
         <div className="input-shell">
+          <button id="img-btn" onClick={() => fileInputRef.current?.click()} title="发送图片">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <rect x="3" y="3" width="18" height="18" rx="3" />
+              <circle cx="8.5" cy="8.5" r="1.5" />
+              <polyline points="21 15 16 10 5 21" />
+            </svg>
+          </button>
+          <input
+            type="file"
+            ref={fileInputRef}
+            accept="image/jpeg,image/png"
+            style={{ display: 'none' }}
+            onChange={handleImageSelect}
+          />
           <textarea
             id="msg-input"
             rows={1}
@@ -448,11 +549,17 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
           />
-          <button id="send-btn" onClick={handleSend} disabled={isSending || !input.trim()}>
+          <button id="send-btn" onClick={handleSend} disabled={isSending || (!input.trim() && !pendingImage)}>
             <SendIcon />
           </button>
         </div>
       </div>
+
+      {lightboxUrl && (
+        <div className="lightbox-overlay" onClick={() => setLightboxUrl(null)}>
+          <img src={lightboxUrl} alt="大图" className="lightbox-img" />
+        </div>
+      )}
     </div>
   )
 }

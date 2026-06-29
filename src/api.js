@@ -88,11 +88,16 @@ export async function deleteMemory(id) {
   }
 }
 
-export async function sendChatMessage(sessionId, message) {
+export async function sendChatMessage(sessionId, content, imageBase64 = null, imageType = null) {
+  const body = { session_id: sessionId, content }
+  if (imageBase64) {
+    body.image_base64 = imageBase64
+    body.image_type = imageType
+  }
   const res = await fetch(`${API_BASE_URL}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: sessionId, message }),
+    body: JSON.stringify(body),
   })
   const data = await res.json().catch(() => null)
   if (!res.ok) {
