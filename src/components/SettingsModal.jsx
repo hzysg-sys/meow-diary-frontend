@@ -10,12 +10,20 @@ const MODEL_OPTIONS = [
   { label: 'Opus 4.8', value: '[按量6] claude-opus-4.8 [不补]' },
 ]
 
+const THINKING_OPTIONS = [
+  { label: '关闭', value: 'off' },
+  { label: '低', value: 'low' },
+  { label: '中', value: 'medium' },
+  { label: '高', value: 'high' },
+]
+
 const DEFAULT_SETTINGS = {
   systemPrompt: '',
   temperature: 0.7,
   contextTurns: 20,
   maxTokens: 800,
   modelName: MODEL_OPTIONS[0].value,
+  reasoningEffort: 'off',
 }
 
 export default function SettingsModal({ open, onClose }) {
@@ -35,7 +43,12 @@ export default function SettingsModal({ open, onClose }) {
       .then((data) => {
         if (cancelled) return
         const matched = MODEL_OPTIONS.some((o) => o.value === data.modelName)
-        setForm({ ...data, modelName: matched ? data.modelName : MODEL_OPTIONS[0].value })
+        const validEffort = THINKING_OPTIONS.some((o) => o.value === data.reasoningEffort)
+        setForm({
+          ...data,
+          modelName: matched ? data.modelName : MODEL_OPTIONS[0].value,
+          reasoningEffort: validEffort ? data.reasoningEffort : 'off',
+        })
       })
       .catch((err) => {
         if (cancelled) return
@@ -88,6 +101,17 @@ export default function SettingsModal({ open, onClose }) {
             onChange={(e) => setForm({ ...form, modelName: e.target.value })}
           >
             {MODEL_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label>思考深度</label>
+          <select
+            value={form.reasoningEffort}
+            onChange={(e) => setForm({ ...form, reasoningEffort: e.target.value })}
+          >
+            {THINKING_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
