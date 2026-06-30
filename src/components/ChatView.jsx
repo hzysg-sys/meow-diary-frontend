@@ -65,6 +65,28 @@ function nextLocalId() {
   return localIdCounter--
 }
 
+function extractHtmlBlocks(content) {
+  const regex = /```html\s*\n([\s\S]*?)```/g
+  const blocks = []
+  let match
+  while ((match = regex.exec(content)) !== null) {
+    blocks.push(match[1].trim())
+  }
+  return blocks
+}
+
+function downloadHtml(code, index) {
+  const blob = new Blob([code], { type: 'text/html;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = index !== undefined ? `xiake-artifact-${index + 1}.html` : 'xiake-artifact.html'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onOpenSettings }) {
   const [messages, setMessages] = useState([])
   const [loadingHistory, setLoadingHistory] = useState(true)
@@ -381,7 +403,9 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
         {historyError && (
           <p style={{ textAlign: 'center', fontSize: 13, color: '#c98a98' }}>{historyError}</p>
         )}
-        {messages.map((m) => (
+        {messages.map((m) => {
+          const htmlBlocks = m.role === 'assistant' ? extractHtmlBlocks(m.content) : []
+          return (
           <div key={m.id} className={`msg-row ${m.role}`}>
             {m.role === 'assistant' && (
               <div
@@ -507,6 +531,20 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
                           </svg>
                         </button>
                       )}
+                      {htmlBlocks.length > 0 && htmlBlocks.map((code, i) => (
+                        <button
+                          key={`dl-${i}`}
+                          className="msg-action-btn"
+                          onClick={() => downloadHtml(code, htmlBlocks.length > 1 ? i : undefined)}
+                          title="下载 HTML"
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                          </svg>
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </>
@@ -514,7 +552,8 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
             </div>
             {m.role === 'user' && <Avatar role="user" />}
           </div>
-        ))}
+          )
+        })}
         {emptyResponseHint && !isSending && (
           <div className="empty-response-hint">
             <span>小克走神了，再试一次吧</span>
