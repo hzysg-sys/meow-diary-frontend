@@ -65,22 +65,30 @@ function nextLocalId() {
   return localIdCounter--
 }
 
-function extractHtmlBlocks(content) {
+function splitContentWithHtml(content) {
+  const parts = []
   const regex = /```html\s*\n([\s\S]*?)```/g
-  const blocks = []
+  let lastIndex = 0
   let match
   while ((match = regex.exec(content)) !== null) {
-    blocks.push(match[1].trim())
+    if (match.index > lastIndex) {
+      parts.push({ type: 'text', content: content.slice(lastIndex, match.index) })
+    }
+    parts.push({ type: 'html', content: match[1].trim() })
+    lastIndex = match.index + match[0].length
   }
-  return blocks
+  if (lastIndex < content.length) {
+    parts.push({ type: 'text', content: content.slice(lastIndex) })
+  }
+  return parts
 }
 
-function downloadHtml(code, index) {
+function downloadHtml(code) {
   const blob = new Blob([code], { type: 'text/html;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = index !== undefined ? `xiake-artifact-${index + 1}.html` : 'xiake-artifact.html'
+  a.download = 'xiake-artifact.html'
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
@@ -106,6 +114,7 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
   const [pendingImage, setPendingImage] = useState(null)
   const [lightboxUrl, setLightboxUrl] = useState(null)
   const [expandedThinking, setExpandedThinking] = useState({})
+  const [previewHtml, setPreviewHtml] = useState(null)
   const pokeCooldownRef = useRef(false)
   const messagesRef = useRef(null)
   const fileInputRef = useRef(null)
@@ -403,9 +412,7 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
         {historyError && (
           <p style={{ textAlign: 'center', fontSize: 13, color: '#c98a98' }}>{historyError}</p>
         )}
-        {messages.map((m) => {
-          const htmlBlocks = m.role === 'assistant' ? extractHtmlBlocks(m.content) : []
-          return (
+        {messages.map((m) => (
           <div key={m.id} className={`msg-row ${m.role}`}>
             {m.role === 'assistant' && (
               <div
@@ -484,7 +491,29 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
                         onClick={() => setLightboxUrl(m.image_url)}
                       />
                     )}
-                    {m.content}
+                    {m.role === 'assistant' ? (
+                      splitContentWithHtml(m.content).map((part, i) =>
+                        part.type === 'text' ? (
+                          <span key={i} style={{ whiteSpace: 'pre-wrap' }}>{part.content}</span>
+                        ) : (
+                          <div key={i} className="html-artifact-card">
+                            <div className="html-artifact-info">
+                              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c98a98" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="16 18 22 12 16 6" />
+                                <polyline points="8 6 2 12 8 18" />
+                              </svg>
+                              <span className="html-artifact-name">HTML 文件</span>
+                            </div>
+                            <div className="html-artifact-actions">
+                              <button className="html-artifact-btn" onClick={() => setPreviewHtml(part.content)}>预览</button>
+                              <button className="html-artifact-btn" onClick={() => downloadHtml(part.content)}>下载</button>
+                            </div>
+                          </div>
+                        )
+                      )
+                    ) : (
+                      <span style={{ whiteSpace: 'pre-wrap' }}>{m.content}</span>
+                    )}
                   </div>
                   <div className="msg-footer">
                     <div className="msg-time">{m.time}</div>
@@ -531,20 +560,7 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
                           </svg>
                         </button>
                       )}
-                      {htmlBlocks.length > 0 && htmlBlocks.map((code, i) => (
-                        <button
-                          key={`dl-${i}`}
-                          className="msg-action-btn"
-                          onClick={() => downloadHtml(code, htmlBlocks.length > 1 ? i : undefined)}
-                          title="下载 HTML"
-                        >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                            <polyline points="7 10 12 15 17 10" />
-                            <line x1="12" y1="15" x2="12" y2="3" />
-                          </svg>
-                        </button>
-                      ))}
+
                     </div>
                   </div>
                 </>
@@ -552,8 +568,7 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
             </div>
             {m.role === 'user' && <Avatar role="user" />}
           </div>
-          )
-        })}
+        ))}
         {emptyResponseHint && !isSending && (
           <div className="empty-response-hint">
             <span>小克走神了，再试一次吧</span>
@@ -620,6 +635,19 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
       {lightboxUrl && (
         <div className="lightbox-overlay" onClick={() => setLightboxUrl(null)}>
           <img src={lightboxUrl} alt="大图" className="lightbox-img" />
+        </div>
+      )}
+      {previewHtml && (
+        <div className="html-preview-overlay" onClick={() => setPreviewHtml(null)}>
+          <div className="html-preview-container" onClick={e => e.stopPropagation()}>
+            <button className="html-preview-close" onClick={() => setPreviewHtml(null)}>✕</button>
+            <iframe
+              srcDoc={previewHtml}
+              sandbox="allow-scripts"
+              className="html-preview-iframe"
+              title="HTML Preview"
+            />
+          </div>
         </div>
       )}
     </div>
