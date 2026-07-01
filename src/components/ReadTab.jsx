@@ -45,7 +45,6 @@ export default function ReadTab({ active, sessionId }) {
   const [showToc, setShowToc] = useState(false);
   const [tocItems, setTocItems] = useState([]);
   const [expandedToc, setExpandedToc] = useState({});
-  const [debugLog, setDebugLog] = useState([]);
 
   const [highlights, setHighlights] = useState([]);
   const [activeSelection, setActiveSelection] = useState(null);
@@ -292,13 +291,11 @@ export default function ReadTab({ active, sessionId }) {
       if (clickLock) return;
       clickLock = true;
       setTimeout(() => { clickLock = false; }, 300);
-      const width = contents.window.innerWidth;
+      const width = viewerRef.current ? viewerRef.current.clientWidth : contents.window.innerWidth;
       const x = event.clientX;
-      let decision = 'immersive';
-      if (x < width * 0.3) { decision = 'prev'; prevPage(); }
-      else if (x > width * 0.7) { decision = 'next'; nextPage(); }
-      else { toggleImmersive(); }
-      setDebugLog(prev => [...prev.slice(-4), `x=${Math.round(x)}/${Math.round(width)} → ${decision}`]);
+      if (x < width * 0.3) prevPage();
+      else if (x > width * 0.7) nextPage();
+      else toggleImmersive();
     });
 
     return () => {
@@ -807,14 +804,6 @@ export default function ReadTab({ active, sessionId }) {
               ))}
               <button onClick={openDiscuss}>写想法</button>
               <button onClick={dismissSelection}>✕</button>
-            </div>
-          )}
-
-          {readerOpen && currentBook?.format === 'epub' && (
-            <div style={{position:'fixed', top:0, left:0, right:0, zIndex:9999,
-              background:'rgba(0,0,0,0.85)', color:'#0f0', fontSize:'10px',
-              padding:'4px', fontFamily:'monospace'}}>
-              {debugLog.map((l, i) => <div key={i}>{l}</div>)}
             </div>
           )}
 
