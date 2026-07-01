@@ -81,7 +81,7 @@ function App() {
           <ChatListTab show={activeTab === 'chat'} />
           <HealthTab active={activeTab === 'health'} onNavigateToChat={(sid) => goChat(sid)} />
           <MailTab show={activeTab === 'mail'} />
-          <ReadTab active={activeTab === 'read'} />
+          <ReadTab active={activeTab === 'read'} sessionId={currentSessionId} />
         </div>
         <TabBar
           activeTab={activeTab}

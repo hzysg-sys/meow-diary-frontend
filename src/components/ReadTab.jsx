@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import ePub from 'epubjs';
+import Avatar from './Avatar';
+import TypingIndicator from './TypingIndicator';
+import { sendChatMessage, discussBookPassage } from '../api';
 
 const API =
   import.meta.env.VITE_API_BASE_URL ||
@@ -22,7 +25,9 @@ const PRESET_BGS = [
   { label: '浅灰', value: '#f0f0f0' },
 ];
 
-export default function ReadTab({ active }) {
+const HIGHLIGHT_COLORS = ['#faeef0', '#f3dde1', '#ecd4da', '#f2e8e2'];
+
+export default function ReadTab({ active, sessionId }) {
   const [books, setBooks] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -41,10 +46,24 @@ export default function ReadTab({ active }) {
   const [tocItems, setTocItems] = useState([]);
   const [expandedToc, setExpandedToc] = useState({});
 
+  const [highlights, setHighlights] = useState([]);
+  const [selectionToolbar, setSelectionToolbar] = useState(null);
+  const [colorPickerOpen, setColorPickerOpen] = useState(false);
+  const [epubReady, setEpubReady] = useState(false);
+
+  const [discussOpen, setDiscussOpen] = useState(false);
+  const [discussFull, setDiscussFull] = useState(false);
+  const [discussPassage, setDiscussPassage] = useState(null);
+  const [discussInput, setDiscussInput] = useState('');
+  const [discussTurns, setDiscussTurns] = useState([]);
+  const [discussLoading, setDiscussLoading] = useState(false);
+  const [discussFirstTurnDone, setDiscussFirstTurnDone] = useState(false);
+
   const epubRef = useRef(null);
   const renditionRef = useRef(null);
   const viewerRef = useRef(null);
   const readerContentRef = useRef(null);
+  const epubSelectionContentsRef = useRef(null);
 
   const fileInputRef = useRef(null);
 
@@ -173,6 +192,11 @@ export default function ReadTab({ active }) {
     setReaderOpen(true);
     setProgress(book.reading_progress || 0);
 
+    fetch(`${API}/api/books/${book.id}/highlights`)
+      .then(res => res.json())
+      .then(data => setHighlights(Array.isArray(data) ? data : []))
+      .catch(err => console.error('Load highlights error:', err));
+
     if (book.format === 'txt') {
       try {
         const res = await fetch(book.file_url);
@@ -206,7 +230,7 @@ export default function ReadTab({ active }) {
 
     rendition.themes.default({
       body: {
-        'background': bgType === 'custom' ? `url(${bgValue}) center/cover` : bgValue,
+        'background': bgValue,
         'font-size': '17px !important',
         'line-height': '1.85 !important',
         'color': '#2c2c2c !important',
@@ -223,6 +247,7 @@ export default function ReadTab({ active }) {
 
     book.ready.then(() => {
       setTocItems(book.navigation.toc);
+      setEpubReady(true);
       return book.locations.generate(1024);
     }).then(() => {
       rendition.on('relocated', (location) => {
@@ -240,6 +265,27 @@ export default function ReadTab({ active }) {
       });
     });
 
+    rendition.on('selected', (cfiRange, contents) => {
+      epubSelectionContentsRef.current = contents;
+      const text = contents.window.getSelection().toString().trim();
+      if (!text) return;
+      const sel = contents.window.getSelection();
+      if (!sel.rangeCount) return;
+      const rect = sel.getRangeAt(0).getBoundingClientRect();
+      const iframeRect = contents.window.frameElement.getBoundingClientRect();
+      showToolbarAt(
+        iframeRect.left + rect.left + rect.width / 2,
+        iframeRect.top + rect.top,
+        { text, format: 'epub', cfiRange }
+      );
+    });
+
+    rendition.on('click', (event, contents) => {
+      if (!contents) { toggleImmersive(); return; }
+      const sel = contents.window.getSelection().toString().trim();
+      if (!sel) toggleImmersive();
+    });
+
     return () => {
       if (renditionRef.current) renditionRef.current.destroy();
       if (epubRef.current) epubRef.current.destroy();
@@ -247,6 +293,19 @@ export default function ReadTab({ active }) {
       epubRef.current = null;
     };
   }, [readerOpen, currentBook?.id]);
+
+  // epub 划线回显
+  useEffect(() => {
+    if (!epubReady || !renditionRef.current) return;
+    highlights.filter(h => h.format === 'epub' && h.cfi_range).forEach(h => {
+      try {
+        renditionRef.current.annotations.add(
+          'highlight', h.cfi_range, {}, undefined, 'txt-highlight-epub',
+          { fill: h.color, 'fill-opacity': '0.55', 'mix-blend-mode': 'multiply' }
+        );
+      } catch (err) { /* cfi 可能因版本差异失效，忽略单条 */ }
+    });
+  }, [epubReady, highlights]);
 
   useEffect(() => {
     if (!readerOpen || !currentBook || currentBook.format !== 'txt') return;
@@ -258,6 +317,41 @@ export default function ReadTab({ active }) {
       el.scrollTop = (savedPct / 100) * (el.scrollHeight - el.clientHeight);
     }, 100);
   }, [readerOpen, bookContent]);
+
+  // txt 划词检测
+  useEffect(() => {
+    if (!readerOpen || !currentBook || currentBook.format !== 'txt') return;
+    let timer;
+
+    function getLineIndexAndOffset(node, offset) {
+      const el = node.nodeType === 3 ? node.parentElement : node;
+      const p = el.closest('[data-line-index]');
+      if (!p) return null;
+      return { lineIndex: parseInt(p.dataset.lineIndex, 10), offset };
+    }
+
+    const handler = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        const sel = window.getSelection();
+        const text = sel.toString().trim();
+        if (!text || !readerContentRef.current?.contains(sel.anchorNode)) return;
+        const range = sel.getRangeAt(0);
+        const startInfo = getLineIndexAndOffset(range.startContainer, range.startOffset);
+        const endInfo = getLineIndexAndOffset(range.endContainer, range.endOffset);
+        if (!startInfo || !endInfo) return;
+        const rect = range.getClientRects()[0] || range.getBoundingClientRect();
+        showToolbarAt(rect.left + rect.width / 2, rect.top, {
+          text, format: 'txt',
+          lineIndex: startInfo.lineIndex, endLineIndex: endInfo.lineIndex,
+          startOffset: startInfo.offset, endOffset: endInfo.offset,
+        });
+      }, 250);
+    };
+
+    document.addEventListener('selectionchange', handler);
+    return () => { document.removeEventListener('selectionchange', handler); clearTimeout(timer); };
+  }, [readerOpen, currentBook]);
 
   const handleTxtScroll = useCallback(() => {
     if (!readerContentRef.current || !currentBook) return;
@@ -275,6 +369,73 @@ export default function ReadTab({ active }) {
     if (y > h * 0.3 && y < h * 0.7) {
       toggleImmersive();
     }
+  };
+
+  // 工具栏通用逻辑
+  const showToolbarAt = (x, y, data) => {
+    const clampedX = Math.min(Math.max(x, 60), window.innerWidth - 60);
+    const clampedY = Math.max(y, 60);
+    setColorPickerOpen(false);
+    setSelectionToolbar({ x: clampedX, y: clampedY, ...data });
+  };
+
+  const clearSelection = () => {
+    setSelectionToolbar(null);
+    setColorPickerOpen(false);
+    if (currentBook?.format === 'txt') {
+      window.getSelection().removeAllRanges();
+    } else if (epubSelectionContentsRef.current) {
+      epubSelectionContentsRef.current.window.getSelection().removeAllRanges();
+    }
+  };
+
+  useEffect(() => {
+    if (!selectionToolbar) return;
+    const onDocClick = (e) => {
+      if (!e.target.closest('.selection-toolbar')) clearSelection();
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [selectionToolbar]);
+
+  const handleCopySelection = () => {
+    if (selectionToolbar) navigator.clipboard?.writeText(selectionToolbar.text).catch(() => {});
+    clearSelection();
+  };
+
+  const buildHighlightPayload = (sel, color) => {
+    const payload = { format: sel.format, selected_text: sel.text, color, has_discussion: false };
+    if (sel.format === 'epub') payload.cfi_range = sel.cfiRange;
+    else {
+      payload.line_index = sel.lineIndex;
+      payload.end_line_index = sel.endLineIndex;
+      payload.start_offset = sel.startOffset;
+      payload.end_offset = sel.endOffset;
+    }
+    return payload;
+  };
+
+  const saveHighlight = async (color) => {
+    if (!selectionToolbar || !currentBook) return;
+    const sel = selectionToolbar;
+    try {
+      const res = await fetch(`${API}/api/books/${currentBook.id}/highlights`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildHighlightPayload(sel, color)),
+      });
+      const saved = await res.json();
+      setHighlights(prev => [...prev, saved]);
+      if (sel.format === 'epub' && renditionRef.current) {
+        renditionRef.current.annotations.add(
+          'highlight', sel.cfiRange, {}, undefined, 'txt-highlight-epub',
+          { fill: color, 'fill-opacity': '0.55', 'mix-blend-mode': 'multiply' }
+        );
+      }
+    } catch (err) {
+      console.error('Save highlight error:', err);
+    }
+    clearSelection();
   };
 
   const closeReader = async () => {
@@ -308,6 +469,13 @@ export default function ReadTab({ active }) {
     setShowBgPanel(false);
     setTocItems([]);
     setExpandedToc({});
+    setHighlights([]);
+    setSelectionToolbar(null);
+    setColorPickerOpen(false);
+    setEpubReady(false);
+    setDiscussOpen(false);
+    setDiscussTurns([]);
+    setDiscussFirstTurnDone(false);
     loadBooks();
   };
 
@@ -343,11 +511,114 @@ export default function ReadTab({ active }) {
 
   const readerBgStyle = { backgroundColor: bgValue };
 
+  // 划线分段渲染
+  const getLineSegments = (lineIndex, lineText) => {
+    const overlapping = highlights.filter(
+      h => h.format === 'txt' && h.line_index <= lineIndex && h.end_line_index >= lineIndex
+    );
+    if (overlapping.length === 0) return [{ text: lineText, hl: null }];
+
+    const ranges = overlapping
+      .map(h => ({
+        start: h.line_index === lineIndex ? h.start_offset : 0,
+        end: h.end_line_index === lineIndex ? h.end_offset : lineText.length,
+        color: h.color,
+        id: h.id,
+      }))
+      .sort((a, b) => a.start - b.start);
+
+    const segments = [];
+    let cursor = 0;
+    ranges.forEach(r => {
+      if (r.start > cursor) segments.push({ text: lineText.slice(cursor, r.start), hl: null });
+      segments.push({ text: lineText.slice(r.start, r.end), hl: r });
+      cursor = Math.max(cursor, r.end);
+    });
+    if (cursor < lineText.length) segments.push({ text: lineText.slice(cursor), hl: null });
+    return segments;
+  };
+
   const renderTxtContent = () => {
     if (!bookContent) return <p style={{ color: '#999', textAlign: 'center', marginTop: 40 }}>加载中...</p>;
     return bookContent.split('\n').filter(line => line.trim()).map((line, i) => (
-      <p key={i}>{line}</p>
+      <p key={i} data-line-index={i}>
+        {getLineSegments(i, line).map((seg, si) =>
+          seg.hl ? (
+            <mark key={si} className="txt-highlight" style={{ backgroundColor: seg.hl.color }} data-highlight-id={seg.hl.id}>
+              {seg.text}
+            </mark>
+          ) : (
+            <span key={si}>{seg.text}</span>
+          )
+        )}
+      </p>
     ));
+  };
+
+  // 讨论面板逻辑
+  const openDiscuss = () => {
+    if (!selectionToolbar) return;
+    setDiscussPassage(selectionToolbar);
+    setDiscussTurns([]);
+    setDiscussFirstTurnDone(false);
+    setDiscussFull(false);
+    setDiscussOpen(true);
+    clearSelection();
+  };
+
+  const closeDiscuss = () => {
+    setDiscussOpen(false);
+    setDiscussFull(false);
+    setDiscussPassage(null);
+    setDiscussTurns([]);
+  };
+
+  const handleDiscussSend = async () => {
+    const text = discussInput.trim();
+    if (!text || discussLoading || !currentBook) return;
+    setDiscussInput('');
+    setDiscussTurns(prev => [...prev, { role: 'user', content: text }]);
+    setDiscussLoading(true);
+    try {
+      let sid = sessionId;
+      if (!sid || Number.isNaN(sid)) {
+        const sessions = await fetch(`${API}/api/sessions`).then(r => r.json());
+        sid = sessions?.[0]?.id;
+      }
+      let reply;
+      if (!discussFirstTurnDone) {
+        const payload = {
+          session_id: sid,
+          user_thought: text,
+          ...buildHighlightPayload(discussPassage, HIGHLIGHT_COLORS[1]),
+          has_discussion: true,
+        };
+        const data = await discussBookPassage(currentBook.id, payload);
+        reply = data.reply;
+        if (data.highlightId) {
+          setHighlights(prev => [...prev, {
+            id: data.highlightId,
+            ...buildHighlightPayload(discussPassage, HIGHLIGHT_COLORS[1]),
+            has_discussion: true,
+          }]);
+          if (discussPassage.format === 'epub' && renditionRef.current) {
+            renditionRef.current.annotations.add(
+              'highlight', discussPassage.cfiRange, {}, undefined, 'txt-highlight-epub',
+              { fill: HIGHLIGHT_COLORS[1], 'fill-opacity': '0.55', 'mix-blend-mode': 'multiply' }
+            );
+          }
+        }
+        setDiscussFirstTurnDone(true);
+      } else {
+        const data = await sendChatMessage(sid, text);
+        reply = data.reply;
+      }
+      setDiscussTurns(prev => [...prev, { role: 'assistant', content: reply }]);
+    } catch (err) {
+      setDiscussTurns(prev => [...prev, { role: 'assistant', content: '小克走神了，再试一次吧' }]);
+    } finally {
+      setDiscussLoading(false);
+    }
   };
 
   const renderTocItems = (items, depth = 0) => {
@@ -515,7 +786,7 @@ export default function ReadTab({ active }) {
               <div ref={viewerRef} className="epub-viewer"></div>
               <div className="reader-tap-zones">
                 <div className="tap-zone tap-left" onClick={prevPage}></div>
-                <div className="tap-zone tap-center" onClick={toggleImmersive}></div>
+                <div className="tap-zone tap-center"></div>
                 <div className="tap-zone tap-right" onClick={nextPage}></div>
               </div>
             </div>
@@ -535,6 +806,66 @@ export default function ReadTab({ active }) {
               <div className="reader-progress-fill" style={{ width: `${progress}%` }}></div>
             </div>
           </div>
+
+          {selectionToolbar && (
+            <div className="selection-toolbar" style={{ left: selectionToolbar.x, top: selectionToolbar.y }}>
+              {!colorPickerOpen ? (
+                <>
+                  <button onClick={handleCopySelection}>复制</button>
+                  <button onClick={() => setColorPickerOpen(true)}>划线</button>
+                  <button onClick={openDiscuss}>写想法</button>
+                </>
+              ) : (
+                HIGHLIGHT_COLORS.map(c => (
+                  <button key={c} className="color-dot" style={{ background: c }} onClick={() => saveHighlight(c)} />
+                ))
+              )}
+            </div>
+          )}
+
+          {discussOpen && (
+            <div className={`discuss-panel ${discussFull ? 'discuss-panel-full' : ''}`}>
+              <div className="discuss-panel-header">
+                <button className="discuss-expand-btn" onClick={() => setDiscussFull(prev => !prev)}>
+                  {discussFull ? '⌄' : '⌃'}
+                </button>
+                <span className="discuss-panel-title">和小克聊聊这段</span>
+                <button className="discuss-close-btn" onClick={closeDiscuss}>✕</button>
+              </div>
+              <div className="discuss-passage-quote">「{discussPassage?.text}」</div>
+              <div className="discuss-messages">
+                {discussTurns.map((t, i) => (
+                  <div key={i} className={`msg-row ${t.role}`}>
+                    {t.role === 'assistant' && <Avatar role="assistant" />}
+                    <div className="msg-wrap"><div className="bubble">{t.content}</div></div>
+                  </div>
+                ))}
+                {discussLoading && (
+                  <div className="msg-row assistant">
+                    <Avatar role="assistant" />
+                    <div className="msg-wrap"><div className="bubble"><TypingIndicator /></div></div>
+                  </div>
+                )}
+              </div>
+              <div className="discuss-input-bar">
+                <textarea
+                  className="discuss-textarea"
+                  value={discussInput}
+                  onChange={(e) => setDiscussInput(e.target.value)}
+                  placeholder="写下你的想法..."
+                  rows={1}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleDiscussSend(); } }}
+                />
+                <button
+                  className="discuss-send-btn"
+                  onClick={handleDiscussSend}
+                  disabled={!discussInput.trim() || discussLoading}
+                >
+                  发送
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

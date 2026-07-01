@@ -160,6 +160,22 @@ export async function fetchPeriodPrediction() {
   return res.json()
 }
 
+export async function discussBookPassage(bookId, payload) {
+  const res = await fetch(`${API_BASE_URL}/api/books/${bookId}/discuss`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  const data = await res.json().catch(() => null)
+  if (!res.ok) {
+    throw new Error(data?.error || `讨论请求失败 (${res.status})`)
+  }
+  if (data?.error === 'empty_response') {
+    throw Object.assign(new Error(data.message || ''), { code: 'empty_response' })
+  }
+  return data
+}
+
 export async function editAndRegenerateMessage(id, newContent) {
   const res = await fetch(`${API_BASE_URL}/api/messages/${id}/edit-and-regenerate`, {
     method: 'POST',
