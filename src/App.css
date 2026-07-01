@@ -2012,6 +2012,7 @@
 
 .tap-left {
   width: 35%;
+  pointer-events: auto;
 }
 
 .tap-center {
@@ -2120,6 +2121,7 @@
 
 .tap-right {
   width: 35%;
+  pointer-events: auto;
 }
 
 /* keep stub so old references don't break at parse time */
