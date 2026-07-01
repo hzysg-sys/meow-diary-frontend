@@ -63,6 +63,8 @@ export default function ReadTab({ active, sessionId }) {
   const viewerRef = useRef(null);
   const readerContentRef = useRef(null);
   const epubSelectionContentsRef = useRef(null);
+  const lastLocationRef = useRef(null);
+  const relocatedSaveTimerRef = useRef(null);
 
   const fileInputRef = useRef(null);
 
@@ -264,25 +266,28 @@ export default function ReadTab({ active, sessionId }) {
     });
 
     const loc = currentBook.reading_location;
-    if (loc) {
-      rendition.display(loc);
-    } else {
-      rendition.display();
-    }
+    rendition.display(loc || undefined).then(() => {
+      const initial = rendition.currentLocation();
+      if (initial && initial.start) lastLocationRef.current = initial.start.cfi;
+    });
 
     rendition.on('relocated', (location) => {
       const cfi = location.start.cfi;
+      lastLocationRef.current = cfi;
       let pct = progress;
       if (book.locations.length()) {
         pct = Math.round(book.locations.percentageFromCfi(cfi) * 100);
         setProgress(pct);
       }
-      fetch(`${API}/api/books/${currentBook.id}/progress`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reading_progress: pct, reading_location: cfi }),
-      }).catch(console.error);
       setBooks(prev => prev.map(b => b.id === currentBook.id ? { ...b, reading_progress: pct, reading_location: cfi } : b));
+      clearTimeout(relocatedSaveTimerRef.current);
+      relocatedSaveTimerRef.current = setTimeout(() => {
+        fetch(`${API}/api/books/${currentBook.id}/progress`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reading_progress: pct, reading_location: cfi }),
+        }).catch(console.error);
+      }, 800);
     });
 
     book.ready.then(() => {
@@ -443,10 +448,10 @@ export default function ReadTab({ active, sessionId }) {
     }
 
     if (currentBook && currentBook.format === 'epub' && renditionRef.current) {
+      clearTimeout(relocatedSaveTimerRef.current);
       try {
-        const loc = renditionRef.current.currentLocation();
-        if (loc && loc.start) {
-          const cfi = loc.start.cfi;
+        const cfi = lastLocationRef.current;
+        if (cfi) {
           let pct = progress;
           if (epubRef.current && epubRef.current.locations.length()) {
             pct = Math.round(epubRef.current.locations.percentageFromCfi(cfi) * 100);
