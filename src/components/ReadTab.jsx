@@ -47,8 +47,7 @@ export default function ReadTab({ active, sessionId }) {
   const [expandedToc, setExpandedToc] = useState({});
 
   const [highlights, setHighlights] = useState([]);
-  const [selectionToolbar, setSelectionToolbar] = useState(null);
-  const [colorPickerOpen, setColorPickerOpen] = useState(false);
+  const [activeSelection, setActiveSelection] = useState(null);
   const [epubReady, setEpubReady] = useState(false);
 
   const [discussOpen, setDiscussOpen] = useState(false);
@@ -248,18 +247,10 @@ export default function ReadTab({ active, sessionId }) {
         debounceTimer = setTimeout(() => {
           const sel = contents.window.getSelection();
           const text = sel.toString().trim();
-          if (!text || !sel.rangeCount) return;
+          if (!text || !sel.rangeCount) { setActiveSelection(null); return; }
           epubSelectionContentsRef.current = contents;
-          const range = sel.getRangeAt(0);
-          const cfiRange = contents.cfiFromRange(range);
-          const rect = range.getBoundingClientRect();
-          const iframeRect = contents.window.frameElement.getBoundingClientRect();
-          showToolbarAt(
-            iframeRect.left + rect.left + rect.width / 2,
-            iframeRect.top + rect.top,
-            { text, format: 'epub', cfiRange }
-          );
-          sel.removeAllRanges();
+          const cfiRange = contents.cfiFromRange(sel.getRangeAt(0));
+          setActiveSelection({ text, format: 'epub', cfiRange });
         }, 350);
       });
     });
@@ -291,9 +282,13 @@ export default function ReadTab({ active, sessionId }) {
       });
     });
 
+    let clickLock = false;
     rendition.on('click', (event, contents) => {
       const sel = contents.window.getSelection().toString().trim();
       if (sel) return;
+      if (clickLock) return;
+      clickLock = true;
+      setTimeout(() => { clickLock = false; }, 300);
       const width = contents.window.innerWidth;
       const x = event.clientX;
       if (x < width * 0.3) prevPage();
@@ -350,18 +345,12 @@ export default function ReadTab({ active, sessionId }) {
       timer = setTimeout(() => {
         const sel = window.getSelection();
         const text = sel.toString().trim();
-        if (!text || !readerContentRef.current?.contains(sel.anchorNode)) return;
+        if (!text || !readerContentRef.current?.contains(sel.anchorNode)) { setActiveSelection(null); return; }
         const range = sel.getRangeAt(0);
         const startInfo = getLineIndexAndOffset(range.startContainer, range.startOffset);
         const endInfo = getLineIndexAndOffset(range.endContainer, range.endOffset);
         if (!startInfo || !endInfo) return;
-        const rect = range.getClientRects()[0] || range.getBoundingClientRect();
-        showToolbarAt(rect.left + rect.width / 2, rect.top, {
-          text, format: 'txt',
-          lineIndex: startInfo.lineIndex, endLineIndex: endInfo.lineIndex,
-          startOffset: startInfo.offset, endOffset: endInfo.offset,
-        });
-        window.getSelection().removeAllRanges();
+        setActiveSelection({ text, format: 'txt', lineIndex: startInfo.lineIndex, endLineIndex: endInfo.lineIndex, startOffset: startInfo.offset, endOffset: endInfo.offset });
       }, 350);
     };
 
@@ -387,36 +376,15 @@ export default function ReadTab({ active, sessionId }) {
     }
   };
 
-  // 工具栏通用逻辑
-  const showToolbarAt = (x, y, data) => {
-    const clampedX = Math.min(Math.max(x, 60), window.innerWidth - 60);
-    const clampedY = Math.max(y, 60);
-    setColorPickerOpen(false);
-    setSelectionToolbar({ x: clampedX, y: clampedY, ...data });
+  const dismissSelection = () => {
+    setActiveSelection(null);
+    if (currentBook?.format === 'txt') window.getSelection().removeAllRanges();
+    else if (epubSelectionContentsRef.current) epubSelectionContentsRef.current.window.getSelection().removeAllRanges();
   };
-
-  const clearSelection = () => {
-    setSelectionToolbar(null);
-    setColorPickerOpen(false);
-    if (currentBook?.format === 'txt') {
-      window.getSelection().removeAllRanges();
-    } else if (epubSelectionContentsRef.current) {
-      epubSelectionContentsRef.current.window.getSelection().removeAllRanges();
-    }
-  };
-
-  useEffect(() => {
-    if (!selectionToolbar) return;
-    const onDocClick = (e) => {
-      if (!e.target.closest('.selection-toolbar')) clearSelection();
-    };
-    document.addEventListener('mousedown', onDocClick);
-    return () => document.removeEventListener('mousedown', onDocClick);
-  }, [selectionToolbar]);
 
   const handleCopySelection = () => {
-    if (selectionToolbar) navigator.clipboard?.writeText(selectionToolbar.text).catch(() => {});
-    clearSelection();
+    if (activeSelection) navigator.clipboard?.writeText(activeSelection.text).catch(() => {});
+    dismissSelection();
   };
 
   const buildHighlightPayload = (sel, color) => {
@@ -432,8 +400,8 @@ export default function ReadTab({ active, sessionId }) {
   };
 
   const saveHighlight = async (color) => {
-    if (!selectionToolbar || !currentBook) return;
-    const sel = selectionToolbar;
+    if (!activeSelection || !currentBook) return;
+    const sel = activeSelection;
     try {
       const res = await fetch(`${API}/api/books/${currentBook.id}/highlights`, {
         method: 'POST',
@@ -451,7 +419,7 @@ export default function ReadTab({ active, sessionId }) {
     } catch (err) {
       console.error('Save highlight error:', err);
     }
-    clearSelection();
+    dismissSelection();
   };
 
   const closeReader = async () => {
@@ -486,8 +454,7 @@ export default function ReadTab({ active, sessionId }) {
     setTocItems([]);
     setExpandedToc({});
     setHighlights([]);
-    setSelectionToolbar(null);
-    setColorPickerOpen(false);
+    setActiveSelection(null);
     setEpubReady(false);
     setDiscussOpen(false);
     setDiscussTurns([]);
@@ -573,13 +540,13 @@ export default function ReadTab({ active, sessionId }) {
 
   // 讨论面板逻辑
   const openDiscuss = () => {
-    if (!selectionToolbar) return;
-    setDiscussPassage(selectionToolbar);
+    if (!activeSelection) return;
+    setDiscussPassage(activeSelection);
     setDiscussTurns([]);
     setDiscussFirstTurnDone(false);
     setDiscussFull(false);
     setDiscussOpen(true);
-    clearSelection();
+    dismissSelection();
   };
 
   const closeDiscuss = () => {
@@ -823,19 +790,21 @@ export default function ReadTab({ active, sessionId }) {
             </div>
           </div>
 
-          {selectionToolbar && (
-            <div className="selection-toolbar" style={{ left: selectionToolbar.x, top: selectionToolbar.y }}>
-              {!colorPickerOpen ? (
-                <>
-                  <button onClick={handleCopySelection}>复制</button>
-                  <button onClick={() => setColorPickerOpen(true)}>划线</button>
-                  <button onClick={openDiscuss}>写想法</button>
-                </>
-              ) : (
-                HIGHLIGHT_COLORS.map(c => (
-                  <button key={c} className="color-dot" style={{ background: c }} onClick={() => saveHighlight(c)} />
-                ))
-              )}
+          {activeSelection && (
+            <div className="selection-actionbar">
+              <div className="selection-actionbar-text">
+                {activeSelection.text.length > 40 ? activeSelection.text.slice(0, 40) + '…' : activeSelection.text}
+              </div>
+              <div className="selection-actionbar-btns">
+                <button onClick={handleCopySelection}>复制</button>
+                <div className="selection-actionbar-colors">
+                  {HIGHLIGHT_COLORS.map(c => (
+                    <button key={c} className="color-dot" style={{ background: c }} onClick={() => saveHighlight(c)} />
+                  ))}
+                </div>
+                <button onClick={openDiscuss}>写想法</button>
+                <button onClick={dismissSelection}>✕</button>
+              </div>
             </div>
           )}
 
