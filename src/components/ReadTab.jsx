@@ -241,6 +241,12 @@ export default function ReadTab({ active, sessionId }) {
     });
 
     rendition.hooks.content.register((contents) => {
+      contents.window.addEventListener('scroll', () => {
+        if (contents.window.scrollX !== 0 || contents.window.scrollY !== 0) {
+          contents.window.scrollTo(0, 0);
+        }
+      });
+
       let debounceTimer;
       contents.document.addEventListener('selectionchange', () => {
         clearTimeout(debounceTimer);
@@ -281,6 +287,10 @@ export default function ReadTab({ active, sessionId }) {
             reading_location: location.start.cfi,
           }),
         }).catch(console.error);
+        setBooks(prev => prev.map(b => b.id === currentBook.id
+          ? { ...b, reading_progress: Math.round(pct * 100), reading_location: location.start.cfi }
+          : b
+        ));
       });
     });
 
@@ -425,6 +435,10 @@ export default function ReadTab({ active, sessionId }) {
             reading_location: String(el.scrollTop),
           }),
         });
+        setBooks(prev => prev.map(b => b.id === currentBook.id
+          ? { ...b, reading_progress: pct || 0, reading_location: String(el.scrollTop) }
+          : b
+        ));
       } catch (err) {
         console.error('Save progress error:', err);
       }
@@ -817,12 +831,7 @@ export default function ReadTab({ active, sessionId }) {
                     <div className="msg-wrap"><div className="bubble">{t.content}</div></div>
                   </div>
                 ))}
-                {discussLoading && (
-                  <div className="msg-row assistant">
-                    <Avatar role="assistant" />
-                    <div className="msg-wrap"><div className="bubble"><TypingIndicator /></div></div>
-                  </div>
-                )}
+                {discussLoading && <TypingIndicator />}
               </div>
               <div className="discuss-input-bar">
                 <textarea
