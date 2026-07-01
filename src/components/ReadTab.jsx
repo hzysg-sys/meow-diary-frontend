@@ -235,9 +235,9 @@ export default function ReadTab({ active, sessionId }) {
         'line-height': '1.85 !important',
         'color': '#2c2c2c !important',
         'padding': '16px !important',
-        '-webkit-user-select': 'text',
-        'user-select': 'text',
-        '-webkit-touch-callout': 'default',
+        '-webkit-user-select': 'text !important',
+        'user-select': 'text !important',
+        '-webkit-touch-callout': 'default !important',
       }
     });
 
