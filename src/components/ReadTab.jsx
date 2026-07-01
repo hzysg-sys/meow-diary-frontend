@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import ePub from 'epubjs';
 
-const API = import.meta.env.VITE_API_URL || '';
+const API =
+  import.meta.env.VITE_API_BASE_URL ||
+  (import.meta.env.DEV ? 'http://localhost:3000' : 'https://meow-diary-backend.onrender.com')
 
 const COVER_COLORS = [
   'linear-gradient(150deg, #d4b5bc, #c09aa4)',
