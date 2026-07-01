@@ -45,6 +45,7 @@ export default function ReadTab({ active, sessionId }) {
   const [showToc, setShowToc] = useState(false);
   const [tocItems, setTocItems] = useState([]);
   const [expandedToc, setExpandedToc] = useState({});
+  const [debugLog, setDebugLog] = useState([]);
 
   const [highlights, setHighlights] = useState([]);
   const [activeSelection, setActiveSelection] = useState(null);
@@ -250,7 +251,9 @@ export default function ReadTab({ active, sessionId }) {
           if (!text || !sel.rangeCount) { setActiveSelection(null); return; }
           epubSelectionContentsRef.current = contents;
           const cfiRange = contents.cfiFromRange(sel.getRangeAt(0));
-          setActiveSelection({ text, format: 'epub', cfiRange });
+          const rect = sel.getRangeAt(0).getBoundingClientRect();
+          const iframeRect = contents.window.frameElement.getBoundingClientRect();
+          setActiveSelection({ text, format: 'epub', cfiRange, anchorX: iframeRect.left + rect.left + rect.width / 2, anchorY: iframeRect.top + rect.bottom });
         }, 350);
       });
     });
@@ -291,9 +294,11 @@ export default function ReadTab({ active, sessionId }) {
       setTimeout(() => { clickLock = false; }, 300);
       const width = contents.window.innerWidth;
       const x = event.clientX;
-      if (x < width * 0.3) prevPage();
-      else if (x > width * 0.7) nextPage();
-      else toggleImmersive();
+      let decision = 'immersive';
+      if (x < width * 0.3) { decision = 'prev'; prevPage(); }
+      else if (x > width * 0.7) { decision = 'next'; nextPage(); }
+      else { toggleImmersive(); }
+      setDebugLog(prev => [...prev.slice(-4), `x=${Math.round(x)}/${Math.round(width)} → ${decision}`]);
     });
 
     return () => {
@@ -350,7 +355,8 @@ export default function ReadTab({ active, sessionId }) {
         const startInfo = getLineIndexAndOffset(range.startContainer, range.startOffset);
         const endInfo = getLineIndexAndOffset(range.endContainer, range.endOffset);
         if (!startInfo || !endInfo) return;
-        setActiveSelection({ text, format: 'txt', lineIndex: startInfo.lineIndex, endLineIndex: endInfo.lineIndex, startOffset: startInfo.offset, endOffset: endInfo.offset });
+        const rect = range.getBoundingClientRect();
+        setActiveSelection({ text, format: 'txt', lineIndex: startInfo.lineIndex, endLineIndex: endInfo.lineIndex, startOffset: startInfo.offset, endOffset: endInfo.offset, anchorX: rect.left + rect.width / 2, anchorY: rect.bottom });
       }, 350);
     };
 
@@ -791,20 +797,24 @@ export default function ReadTab({ active, sessionId }) {
           </div>
 
           {activeSelection && (
-            <div className="selection-actionbar">
-              <div className="selection-actionbar-text">
-                {activeSelection.text.length > 40 ? activeSelection.text.slice(0, 40) + '…' : activeSelection.text}
-              </div>
-              <div className="selection-actionbar-btns">
-                <button onClick={handleCopySelection}>复制</button>
-                <div className="selection-actionbar-colors">
-                  {HIGHLIGHT_COLORS.map(c => (
-                    <button key={c} className="color-dot" style={{ background: c }} onClick={() => saveHighlight(c)} />
-                  ))}
-                </div>
-                <button onClick={openDiscuss}>写想法</button>
-                <button onClick={dismissSelection}>✕</button>
-              </div>
+            <div className="selection-actionbar" style={{
+              left: Math.min(Math.max(activeSelection.anchorX, 90), window.innerWidth - 90),
+              top: Math.min(activeSelection.anchorY + 10, window.innerHeight - 70),
+            }}>
+              <button onClick={handleCopySelection}>复制</button>
+              {HIGHLIGHT_COLORS.map(c => (
+                <button key={c} className="color-dot" style={{ background: c }} onClick={() => saveHighlight(c)} />
+              ))}
+              <button onClick={openDiscuss}>写想法</button>
+              <button onClick={dismissSelection}>✕</button>
+            </div>
+          )}
+
+          {readerOpen && currentBook?.format === 'epub' && (
+            <div style={{position:'fixed', top:0, left:0, right:0, zIndex:9999,
+              background:'rgba(0,0,0,0.85)', color:'#0f0', fontSize:'10px',
+              padding:'4px', fontFamily:'monospace'}}>
+              {debugLog.map((l, i) => <div key={i}>{l}</div>)}
             </div>
           )}
 
