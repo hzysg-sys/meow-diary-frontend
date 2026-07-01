@@ -242,19 +242,25 @@ export default function ReadTab({ active, sessionId }) {
     });
 
     rendition.hooks.content.register((contents) => {
+      let debounceTimer;
       contents.document.addEventListener('selectionchange', () => {
-        const sel = contents.window.getSelection();
-        const text = sel.toString().trim();
-        if (!text || !sel.rangeCount) return;
-        epubSelectionContentsRef.current = contents;
-        const cfiRange = contents.cfiFromRange(sel.getRangeAt(0));
-        const rect = sel.getRangeAt(0).getBoundingClientRect();
-        const iframeRect = contents.window.frameElement.getBoundingClientRect();
-        showToolbarAt(
-          iframeRect.left + rect.left + rect.width / 2,
-          iframeRect.top + rect.top,
-          { text, format: 'epub', cfiRange }
-        );
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          const sel = contents.window.getSelection();
+          const text = sel.toString().trim();
+          if (!text || !sel.rangeCount) return;
+          epubSelectionContentsRef.current = contents;
+          const range = sel.getRangeAt(0);
+          const cfiRange = contents.cfiFromRange(range);
+          const rect = range.getBoundingClientRect();
+          const iframeRect = contents.window.frameElement.getBoundingClientRect();
+          showToolbarAt(
+            iframeRect.left + rect.left + rect.width / 2,
+            iframeRect.top + rect.top,
+            { text, format: 'epub', cfiRange }
+          );
+          sel.removeAllRanges();
+        }, 350);
       });
     });
 
@@ -285,25 +291,14 @@ export default function ReadTab({ active, sessionId }) {
       });
     });
 
-    rendition.on('selected', (cfiRange, contents) => {
-      epubSelectionContentsRef.current = contents;
-      const text = contents.window.getSelection().toString().trim();
-      if (!text) return;
-      const sel = contents.window.getSelection();
-      if (!sel.rangeCount) return;
-      const rect = sel.getRangeAt(0).getBoundingClientRect();
-      const iframeRect = contents.window.frameElement.getBoundingClientRect();
-      showToolbarAt(
-        iframeRect.left + rect.left + rect.width / 2,
-        iframeRect.top + rect.top,
-        { text, format: 'epub', cfiRange }
-      );
-    });
-
     rendition.on('click', (event, contents) => {
-      if (!contents) { toggleImmersive(); return; }
       const sel = contents.window.getSelection().toString().trim();
-      if (!sel) toggleImmersive();
+      if (sel) return;
+      const width = contents.window.innerWidth;
+      const x = event.clientX;
+      if (x < width * 0.3) prevPage();
+      else if (x > width * 0.7) nextPage();
+      else toggleImmersive();
     });
 
     return () => {
@@ -366,7 +361,8 @@ export default function ReadTab({ active, sessionId }) {
           lineIndex: startInfo.lineIndex, endLineIndex: endInfo.lineIndex,
           startOffset: startInfo.offset, endOffset: endInfo.offset,
         });
-      }, 250);
+        window.getSelection().removeAllRanges();
+      }, 350);
     };
 
     document.addEventListener('selectionchange', handler);
