@@ -2003,6 +2003,7 @@
   bottom: 0;
   display: flex;
   z-index: 2;
+  pointer-events: none;
 }
 
 .tap-zone {
@@ -2011,11 +2012,11 @@
 
 .tap-left {
   width: 35%;
+  pointer-events: auto;
 }
 
 .tap-center {
   width: 30%;
-  pointer-events: none;
 }
 
 .selection-toolbar {
@@ -2122,6 +2123,7 @@
 
 .tap-right {
   width: 35%;
+  pointer-events: auto;
 }
 
 /* keep stub so old references don't break at parse time */
