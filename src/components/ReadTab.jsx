@@ -235,7 +235,27 @@ export default function ReadTab({ active, sessionId }) {
         'line-height': '1.85 !important',
         'color': '#2c2c2c !important',
         'padding': '16px !important',
+        '-webkit-user-select': 'text',
+        'user-select': 'text',
+        '-webkit-touch-callout': 'default',
       }
+    });
+
+    rendition.hooks.content.register((contents) => {
+      contents.document.addEventListener('selectionchange', () => {
+        const sel = contents.window.getSelection();
+        const text = sel.toString().trim();
+        if (!text || !sel.rangeCount) return;
+        epubSelectionContentsRef.current = contents;
+        const cfiRange = contents.cfiFromRange(sel.getRangeAt(0));
+        const rect = sel.getRangeAt(0).getBoundingClientRect();
+        const iframeRect = contents.window.frameElement.getBoundingClientRect();
+        showToolbarAt(
+          iframeRect.left + rect.left + rect.width / 2,
+          iframeRect.top + rect.top,
+          { text, format: 'epub', cfiRange }
+        );
+      });
     });
 
     const loc = currentBook.reading_location;
