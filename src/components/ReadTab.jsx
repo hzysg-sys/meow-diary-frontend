@@ -45,6 +45,7 @@ export default function ReadTab({ active, sessionId }) {
   const [showToc, setShowToc] = useState(false);
   const [tocItems, setTocItems] = useState([]);
   const [expandedToc, setExpandedToc] = useState({});
+  const [debugLog, setDebugLog] = useState([]);
 
   const [highlights, setHighlights] = useState([]);
   const [selectionToolbar, setSelectionToolbar] = useState(null);
@@ -64,6 +65,18 @@ export default function ReadTab({ active, sessionId }) {
   const viewerRef = useRef(null);
   const readerContentRef = useRef(null);
   const epubSelectionContentsRef = useRef(null);
+
+  useEffect(() => {
+    if (!readerOpen || currentBook?.format !== 'epub') return;
+    const logTouch = (e) => {
+      const t = e.touches?.[0] || e;
+      const el = document.elementFromPoint(t.clientX, t.clientY);
+      const info = `${e.type} → ${el?.tagName}.${el?.className || ''}`;
+      setDebugLog(prev => [...prev.slice(-4), info]);
+    };
+    document.addEventListener('touchstart', logTouch, true);
+    return () => document.removeEventListener('touchstart', logTouch, true);
+  }, [readerOpen, currentBook]);
 
   const fileInputRef = useRef(null);
 
@@ -670,6 +683,13 @@ export default function ReadTab({ active, sessionId }) {
 
   return (
     <div className="read-tab" style={{ display: active ? 'flex' : 'none' }}>
+      {readerOpen && currentBook?.format === 'epub' && (
+        <div style={{position:'fixed',top:0,left:0,right:0,zIndex:9999,
+          background:'rgba(0,0,0,0.85)',color:'#0f0',fontSize:'10px',
+          padding:'4px',fontFamily:'monospace'}}>
+          {debugLog.map((l, i) => <div key={i}>{l}</div>)}
+        </div>
+      )}
       <input type="file" ref={fileInputRef} accept=".epub,.txt" style={{ display: 'none' }} onChange={handleFileSelect} />
 
       {/* 书架视图 */}
