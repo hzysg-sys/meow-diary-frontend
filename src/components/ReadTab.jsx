@@ -40,6 +40,8 @@ export default function ReadTab({ active }) {
   const [showToc, setShowToc] = useState(false);
   const [tocItems, setTocItems] = useState([]);
 
+  const immersiveRef = useRef(false);
+
   const epubRef = useRef(null);
   const renditionRef = useRef(null);
   const viewerRef = useRef(null);
@@ -47,6 +49,14 @@ export default function ReadTab({ active }) {
 
   const fileInputRef = useRef(null);
   const bgInputRef = useRef(null);
+
+  const toggleImmersive = useCallback(() => {
+    setImmersive(prev => {
+      const next = !prev;
+      immersiveRef.current = next;
+      return next;
+    });
+  }, []);
 
   const loadBooks = useCallback(async () => {
     try {
@@ -214,8 +224,17 @@ export default function ReadTab({ active }) {
     }
 
     book.ready.then(() => {
-      const toc = book.navigation.toc;
-      setTocItems(toc.map(item => ({ label: item.label.trim(), href: item.href })));
+      const flattenToc = (items, depth = 0) => {
+        let result = [];
+        for (const item of items) {
+          result.push({ label: item.label.trim(), href: item.href, depth });
+          if (item.subitems && item.subitems.length > 0) {
+            result = result.concat(flattenToc(item.subitems, depth + 1));
+          }
+        }
+        return result;
+      };
+      setTocItems(flattenToc(book.navigation.toc));
       return book.locations.generate(1024);
     }).then(() => {
       rendition.on('relocated', (location) => {
@@ -234,11 +253,12 @@ export default function ReadTab({ active }) {
     });
 
     rendition.on('click', (e) => {
+      const iframe = viewerRef.current.querySelector('iframe');
+      const w = iframe ? iframe.clientWidth : viewerRef.current.clientWidth;
       const x = e.clientX || (e.changedTouches && e.changedTouches[0].clientX);
-      const w = viewerRef.current.clientWidth;
       if (x < w * 0.35) rendition.prev();
       else if (x > w * 0.65) rendition.next();
-      else setImmersive(prev => !prev);
+      else toggleImmersive();
     });
 
     return () => {
@@ -488,7 +508,12 @@ export default function ReadTab({ active }) {
               {tocItems.length > 0 ? (
                 <div className="toc-list">
                   {tocItems.map((item, i) => (
-                    <div key={i} className="toc-item" onClick={() => handleTocClick(item)}>
+                    <div
+                      key={i}
+                      className="toc-item"
+                      style={{ paddingLeft: `${20 + item.depth * 20}px` }}
+                      onClick={() => handleTocClick(item)}
+                    >
                       {item.label}
                     </div>
                   ))}
