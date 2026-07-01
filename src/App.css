@@ -1653,6 +1653,10 @@
   height: 100%;
   display: flex;
   flex-direction: column;
+  background-color: #ffebef;
+  background-image: url('/backgrounds/home-bg.png');
+  background-size: cover;
+  background-position: center top;
 }
 
 .shelf-container {
