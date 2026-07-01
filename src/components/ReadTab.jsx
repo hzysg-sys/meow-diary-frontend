@@ -64,12 +64,32 @@ export default function ReadTab({ active, sessionId }) {
   const readerContentRef = useRef(null);
   const epubSelectionContentsRef = useRef(null);
   const lastLocationRef = useRef(null);
-  const relocatedSaveTimerRef = useRef(null);
+  const pendingSaveRef = useRef(null);
+  const saveQueueRef = useRef(Promise.resolve());
 
   const fileInputRef = useRef(null);
 
   const toggleImmersive = useCallback(() => {
     setImmersive(prev => !prev);
+  }, []);
+
+  const queueProgressSave = useCallback((bookId, cfi, pct) => {
+    pendingSaveRef.current = { cfi, pct };
+    saveQueueRef.current = saveQueueRef.current.then(async () => {
+      const payload = pendingSaveRef.current;
+      if (!payload) return;
+      pendingSaveRef.current = null;
+      try {
+        await fetch(`${API}/api/books/${bookId}/progress`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reading_progress: payload.pct, reading_location: payload.cfi }),
+        });
+      } catch (err) {
+        console.error('Save progress error:', err);
+      }
+    });
+    return saveQueueRef.current;
   }, []);
 
   const toggleTocExpand = (label) => {
@@ -280,14 +300,7 @@ export default function ReadTab({ active, sessionId }) {
         setProgress(pct);
       }
       setBooks(prev => prev.map(b => b.id === currentBook.id ? { ...b, reading_progress: pct, reading_location: cfi } : b));
-      clearTimeout(relocatedSaveTimerRef.current);
-      relocatedSaveTimerRef.current = setTimeout(() => {
-        fetch(`${API}/api/books/${currentBook.id}/progress`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reading_progress: pct, reading_location: cfi }),
-        }).catch(console.error);
-      }, 800);
+      queueProgressSave(currentBook.id, cfi, pct);
     });
 
     book.ready.then(() => {
@@ -448,7 +461,6 @@ export default function ReadTab({ active, sessionId }) {
     }
 
     if (currentBook && currentBook.format === 'epub' && renditionRef.current) {
-      clearTimeout(relocatedSaveTimerRef.current);
       try {
         const cfi = lastLocationRef.current;
         if (cfi) {
@@ -456,11 +468,7 @@ export default function ReadTab({ active, sessionId }) {
           if (epubRef.current && epubRef.current.locations.length()) {
             pct = Math.round(epubRef.current.locations.percentageFromCfi(cfi) * 100);
           }
-          await fetch(`${API}/api/books/${currentBook.id}/progress`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reading_progress: pct, reading_location: cfi }),
-          });
+          await queueProgressSave(currentBook.id, cfi, pct);
           setBooks(prev => prev.map(b => b.id === currentBook.id ? { ...b, reading_progress: pct, reading_location: cfi } : b));
         }
       } catch (err) {
