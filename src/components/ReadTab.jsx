@@ -47,7 +47,6 @@ export default function ReadTab({ active }) {
   const readerContentRef = useRef(null);
 
   const fileInputRef = useRef(null);
-  const bgInputRef = useRef(null);
 
   const toggleImmersive = useCallback(() => {
     setImmersive(prev => !prev);
@@ -71,8 +70,8 @@ export default function ReadTab({ active }) {
     try {
       const res = await fetch(`${API}/api/settings`);
       const data = await res.json();
-      if (data.readerBgType) setBgType(data.readerBgType);
-      if (data.readerBgValue) setBgValue(data.readerBgValue);
+      if (data.readerBgType && data.readerBgType !== 'custom') setBgType(data.readerBgType);
+      if (data.readerBgValue && data.readerBgType !== 'custom') setBgValue(data.readerBgValue);
     } catch (err) {
       console.error('Load bg settings error:', err);
     }
@@ -342,36 +341,7 @@ export default function ReadTab({ active }) {
     }
   };
 
-  const handleBgUpload = () => {
-    bgInputRef.current.value = '';
-    bgInputRef.current.click();
-  };
-
-  const handleBgFileSelect = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-      const res = await fetch(`${API}/api/books/reader-bg`, {
-        method: 'POST',
-        body: formData,
-      });
-      const result = await res.json();
-      if (result.url) {
-        setBgType('custom');
-        setBgValue(result.url);
-      }
-    } catch (err) {
-      console.error('Upload bg error:', err);
-    }
-  };
-
-  const readerBgStyle = bgType === 'custom'
-    ? { backgroundImage: `url(${bgValue})`, backgroundSize: 'cover', backgroundPosition: 'center' }
-    : { backgroundColor: bgValue };
+  const readerBgStyle = { backgroundColor: bgValue };
 
   const renderTxtContent = () => {
     if (!bookContent) return <p style={{ color: '#999', textAlign: 'center', marginTop: 40 }}>加载中...</p>;
@@ -410,7 +380,6 @@ export default function ReadTab({ active }) {
   return (
     <div className="read-tab" style={{ display: active ? 'flex' : 'none' }}>
       <input type="file" ref={fileInputRef} accept=".epub,.txt" style={{ display: 'none' }} onChange={handleFileSelect} />
-      <input type="file" ref={bgInputRef} accept="image/*" style={{ display: 'none' }} onChange={handleBgFileSelect} />
 
       {/* 书架视图 */}
       {!readerOpen && (
@@ -484,7 +453,7 @@ export default function ReadTab({ active }) {
 
       {/* 阅读器视图 */}
       {readerOpen && currentBook && (
-        <div className={`reader-container ${immersive ? 'reader-immersive' : ''}`}>
+        <div className={`reader-container ${immersive ? 'reader-immersive' : ''}`} style={{ backgroundColor: bgValue }}>
           <div className={`reader-header ${immersive ? 'reader-header-hidden' : ''}`}>
             <button className="reader-back-btn" onClick={closeReader}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -537,14 +506,6 @@ export default function ReadTab({ active }) {
                     <span>{bg.label}</span>
                   </button>
                 ))}
-                <button className="bg-option bg-option-custom" onClick={handleBgUpload}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                    <circle cx="8.5" cy="8.5" r="1.5" />
-                    <polyline points="21 15 16 10 5 21" />
-                  </svg>
-                  <span>自定义</span>
-                </button>
               </div>
             </div>
           )}
