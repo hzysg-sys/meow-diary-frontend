@@ -1881,6 +1881,22 @@
   flex-direction: column;
 }
 
+.reader-header, .reader-footer {
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.reader-header-hidden {
+  transform: translateY(-100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.reader-footer-hidden {
+  transform: translateY(100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
 .reader-header {
   padding: 10px 16px;
   display: flex;
@@ -2044,4 +2060,52 @@
   background: #c98a98;
   border-radius: 1px;
   transition: width 0.3s;
+}
+
+/* 目录面板 */
+.toc-panel {
+  max-height: 50vh;
+  overflow-y: auto;
+  background: rgba(255,255,255,0.97);
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  padding: 12px 0;
+  flex-shrink: 0;
+}
+
+.toc-panel-title {
+  font-size: 13px;
+  color: #999;
+  padding: 0 20px 10px;
+}
+
+.toc-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.toc-item {
+  padding: 10px 20px;
+  font-size: 14px;
+  color: #333;
+  cursor: pointer;
+  border-bottom: 1px solid rgba(0,0,0,0.03);
+}
+
+.toc-item:active {
+  background: rgba(201, 138, 152, 0.1);
+}
+
+.toc-empty {
+  padding: 20px;
+  text-align: center;
+  color: #999;
+  font-size: 14px;
+}
+
+.reader-toc-btn {
+  background: none;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  padding: 4px;
 }

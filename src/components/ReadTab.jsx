@@ -36,6 +36,10 @@ export default function ReadTab({ active }) {
   const [bgValue, setBgValue] = useState('#f9f3ec');
   const [showBgPanel, setShowBgPanel] = useState(false);
 
+  const [immersive, setImmersive] = useState(false);
+  const [showToc, setShowToc] = useState(false);
+  const [tocItems, setTocItems] = useState([]);
+
   const epubRef = useRef(null);
   const renditionRef = useRef(null);
   const viewerRef = useRef(null);
@@ -210,6 +214,8 @@ export default function ReadTab({ active }) {
     }
 
     book.ready.then(() => {
+      const toc = book.navigation.toc;
+      setTocItems(toc.map(item => ({ label: item.label.trim(), href: item.href })));
       return book.locations.generate(1024);
     }).then(() => {
       rendition.on('relocated', (location) => {
@@ -232,6 +238,7 @@ export default function ReadTab({ active }) {
       const w = viewerRef.current.clientWidth;
       if (x < w * 0.35) rendition.prev();
       else if (x > w * 0.65) rendition.next();
+      else setImmersive(prev => !prev);
     });
 
     return () => {
@@ -260,6 +267,17 @@ export default function ReadTab({ active }) {
     setProgress(pct);
   }, [currentBook]);
 
+  const handleTxtClick = (e) => {
+    const sel = window.getSelection().toString().trim();
+    if (sel) return;
+    const rect = readerContentRef.current.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const h = rect.height;
+    if (y > h * 0.3 && y < h * 0.7) {
+      setImmersive(prev => !prev);
+    }
+  };
+
   const closeReader = async () => {
     if (currentBook && currentBook.format === 'txt' && readerContentRef.current) {
       const el = readerContentRef.current;
@@ -286,7 +304,18 @@ export default function ReadTab({ active }) {
     setReaderOpen(false);
     setCurrentBook(null);
     setBookContent('');
+    setImmersive(false);
+    setShowToc(false);
+    setShowBgPanel(false);
+    setTocItems([]);
     loadBooks();
+  };
+
+  const handleTocClick = (item) => {
+    if (currentBook.format === 'epub' && renditionRef.current) {
+      renditionRef.current.display(item.href);
+    }
+    setShowToc(false);
   };
 
   const prevPage = () => renditionRef.current && renditionRef.current.prev();
@@ -428,7 +457,7 @@ export default function ReadTab({ active }) {
       {/* 阅读器视图 */}
       {readerOpen && currentBook && (
         <div className="reader-container">
-          <div className="reader-header">
+          <div className={`reader-header ${immersive ? 'reader-header-hidden' : ''}`}>
             <button className="reader-back-btn" onClick={closeReader}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <polyline points="15 18 9 12 15 6" />
@@ -436,7 +465,16 @@ export default function ReadTab({ active }) {
               返回
             </button>
             <span className="reader-title-text">{currentBook.title}</span>
-            <button className="reader-setting-btn" onClick={() => setShowBgPanel(!showBgPanel)}>
+            {currentBook.format === 'epub' && (
+              <button className="reader-toc-btn" onClick={() => { setImmersive(false); setShowToc(prev => !prev); setShowBgPanel(false); }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="3" y1="6" x2="21" y2="6" />
+                  <line x1="3" y1="12" x2="15" y2="12" />
+                  <line x1="3" y1="18" x2="10" y2="18" />
+                </svg>
+              </button>
+            )}
+            <button className="reader-setting-btn" onClick={() => { setShowBgPanel(prev => !prev); setShowToc(false); }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="3" />
                 <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
@@ -444,7 +482,24 @@ export default function ReadTab({ active }) {
             </button>
           </div>
 
-          {showBgPanel && (
+          {showToc && !immersive && (
+            <div className="toc-panel">
+              <div className="toc-panel-title">目录</div>
+              {tocItems.length > 0 ? (
+                <div className="toc-list">
+                  {tocItems.map((item, i) => (
+                    <div key={i} className="toc-item" onClick={() => handleTocClick(item)}>
+                      {item.label}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="toc-empty">暂无目录</div>
+              )}
+            </div>
+          )}
+
+          {showBgPanel && !immersive && (
             <div className="bg-panel">
               <div className="bg-panel-title">阅读背景</div>
               <div className="bg-options">
@@ -481,14 +536,14 @@ export default function ReadTab({ active }) {
           )}
 
           {currentBook.format === 'txt' && (
-            <div className="txt-reader" style={readerBgStyle} ref={readerContentRef} onScroll={handleTxtScroll}>
+            <div className="txt-reader" style={readerBgStyle} ref={readerContentRef} onScroll={handleTxtScroll} onClick={handleTxtClick}>
               <div className="txt-content">
                 {renderTxtContent()}
               </div>
             </div>
           )}
 
-          <div className="reader-footer">
+          <div className={`reader-footer ${immersive ? 'reader-footer-hidden' : ''}`}>
             <span>{progress}%</span>
             <div className="reader-progress-track">
               <div className="reader-progress-fill" style={{ width: `${progress}%` }}></div>
