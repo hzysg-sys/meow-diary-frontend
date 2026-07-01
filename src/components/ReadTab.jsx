@@ -39,8 +39,7 @@ export default function ReadTab({ active }) {
   const [immersive, setImmersive] = useState(false);
   const [showToc, setShowToc] = useState(false);
   const [tocItems, setTocItems] = useState([]);
-
-  const immersiveRef = useRef(false);
+  const [expandedToc, setExpandedToc] = useState({});
 
   const epubRef = useRef(null);
   const renditionRef = useRef(null);
@@ -51,12 +50,12 @@ export default function ReadTab({ active }) {
   const bgInputRef = useRef(null);
 
   const toggleImmersive = useCallback(() => {
-    setImmersive(prev => {
-      const next = !prev;
-      immersiveRef.current = next;
-      return next;
-    });
+    setImmersive(prev => !prev);
   }, []);
+
+  const toggleTocExpand = (label) => {
+    setExpandedToc(prev => ({ ...prev, [label]: !prev[label] }));
+  };
 
   const loadBooks = useCallback(async () => {
     try {
@@ -224,17 +223,7 @@ export default function ReadTab({ active }) {
     }
 
     book.ready.then(() => {
-      const flattenToc = (items, depth = 0) => {
-        let result = [];
-        for (const item of items) {
-          result.push({ label: item.label.trim(), href: item.href, depth });
-          if (item.subitems && item.subitems.length > 0) {
-            result = result.concat(flattenToc(item.subitems, depth + 1));
-          }
-        }
-        return result;
-      };
-      setTocItems(flattenToc(book.navigation.toc));
+      setTocItems(book.navigation.toc);
       return book.locations.generate(1024);
     }).then(() => {
       rendition.on('relocated', (location) => {
@@ -250,15 +239,6 @@ export default function ReadTab({ active }) {
           }),
         }).catch(console.error);
       });
-    });
-
-    rendition.on('click', (e) => {
-      const iframe = viewerRef.current.querySelector('iframe');
-      const w = iframe ? iframe.clientWidth : viewerRef.current.clientWidth;
-      const x = e.clientX || (e.changedTouches && e.changedTouches[0].clientX);
-      if (x < w * 0.35) rendition.prev();
-      else if (x > w * 0.65) rendition.next();
-      else toggleImmersive();
     });
 
     return () => {
@@ -294,7 +274,7 @@ export default function ReadTab({ active }) {
     const y = e.clientY - rect.top;
     const h = rect.height;
     if (y > h * 0.3 && y < h * 0.7) {
-      setImmersive(prev => !prev);
+      toggleImmersive();
     }
   };
 
@@ -328,6 +308,7 @@ export default function ReadTab({ active }) {
     setShowToc(false);
     setShowBgPanel(false);
     setTocItems([]);
+    setExpandedToc({});
     loadBooks();
   };
 
@@ -397,6 +378,33 @@ export default function ReadTab({ active }) {
     return bookContent.split('\n').filter(line => line.trim()).map((line, i) => (
       <p key={i}>{line}</p>
     ));
+  };
+
+  const renderTocItems = (items, depth = 0) => {
+    return items.map((item, i) => {
+      const hasChildren = item.subitems && item.subitems.length > 0;
+      const label = item.label.trim();
+      const isExpanded = expandedToc[label];
+
+      return (
+        <div key={`${depth}-${i}`}>
+          <div
+            className="toc-item"
+            style={{ paddingLeft: `${20 + depth * 20}px` }}
+            onClick={() => {
+              if (hasChildren) toggleTocExpand(label);
+              handleTocClick(item);
+            }}
+          >
+            {hasChildren && (
+              <span className={`toc-arrow ${isExpanded ? 'toc-arrow-open' : ''}`}>›</span>
+            )}
+            <span className="toc-item-label">{label}</span>
+          </div>
+          {hasChildren && isExpanded && renderTocItems(item.subitems, depth + 1)}
+        </div>
+      );
+    });
   };
 
   return (
@@ -476,7 +484,7 @@ export default function ReadTab({ active }) {
 
       {/* 阅读器视图 */}
       {readerOpen && currentBook && (
-        <div className="reader-container">
+        <div className={`reader-container ${immersive ? 'reader-immersive' : ''}`}>
           <div className={`reader-header ${immersive ? 'reader-header-hidden' : ''}`}>
             <button className="reader-back-btn" onClick={closeReader}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -507,16 +515,7 @@ export default function ReadTab({ active }) {
               <div className="toc-panel-title">目录</div>
               {tocItems.length > 0 ? (
                 <div className="toc-list">
-                  {tocItems.map((item, i) => (
-                    <div
-                      key={i}
-                      className="toc-item"
-                      style={{ paddingLeft: `${20 + item.depth * 20}px` }}
-                      onClick={() => handleTocClick(item)}
-                    >
-                      {item.label}
-                    </div>
-                  ))}
+                  {renderTocItems(tocItems)}
                 </div>
               ) : (
                 <div className="toc-empty">暂无目录</div>
@@ -553,9 +552,10 @@ export default function ReadTab({ active }) {
           {currentBook.format === 'epub' && (
             <div className="epub-reader" style={readerBgStyle}>
               <div ref={viewerRef} className="epub-viewer"></div>
-              <div className="epub-nav">
-                <button className="epub-nav-btn" onClick={prevPage}>‹</button>
-                <button className="epub-nav-btn" onClick={nextPage}>›</button>
+              <div className="reader-tap-zones">
+                <div className="tap-zone tap-left" onClick={prevPage}></div>
+                <div className="tap-zone tap-center" onClick={toggleImmersive}></div>
+                <div className="tap-zone tap-right" onClick={nextPage}></div>
               </div>
             </div>
           )}
