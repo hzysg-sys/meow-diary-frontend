@@ -270,28 +270,26 @@ export default function ReadTab({ active, sessionId }) {
       rendition.display();
     }
 
+    rendition.on('relocated', (location) => {
+      const cfi = location.start.cfi;
+      let pct = progress;
+      if (book.locations.length()) {
+        pct = Math.round(book.locations.percentageFromCfi(cfi) * 100);
+        setProgress(pct);
+      }
+      fetch(`${API}/api/books/${currentBook.id}/progress`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reading_progress: pct, reading_location: cfi }),
+      }).catch(console.error);
+      setBooks(prev => prev.map(b => b.id === currentBook.id ? { ...b, reading_progress: pct, reading_location: cfi } : b));
+    });
+
     book.ready.then(() => {
       setTocItems(book.navigation.toc);
-      setEpubReady(true);
       return book.locations.generate(1024);
     }).then(() => {
-      rendition.on('relocated', (location) => {
-        const pct = book.locations.percentageFromCfi(location.start.cfi);
-        setProgress(Math.round(pct * 100));
-
-        fetch(`${API}/api/books/${currentBook.id}/progress`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            reading_progress: Math.round(pct * 100),
-            reading_location: location.start.cfi,
-          }),
-        }).catch(console.error);
-        setBooks(prev => prev.map(b => b.id === currentBook.id
-          ? { ...b, reading_progress: Math.round(pct * 100), reading_location: location.start.cfi }
-          : b
-        ));
-      });
+      setEpubReady(true);
     });
 
 
@@ -441,6 +439,27 @@ export default function ReadTab({ active, sessionId }) {
         ));
       } catch (err) {
         console.error('Save progress error:', err);
+      }
+    }
+
+    if (currentBook && currentBook.format === 'epub' && renditionRef.current) {
+      try {
+        const loc = renditionRef.current.currentLocation();
+        if (loc && loc.start) {
+          const cfi = loc.start.cfi;
+          let pct = progress;
+          if (epubRef.current && epubRef.current.locations.length()) {
+            pct = Math.round(epubRef.current.locations.percentageFromCfi(cfi) * 100);
+          }
+          await fetch(`${API}/api/books/${currentBook.id}/progress`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reading_progress: pct, reading_location: cfi }),
+          });
+          setBooks(prev => prev.map(b => b.id === currentBook.id ? { ...b, reading_progress: pct, reading_location: cfi } : b));
+        }
+      } catch (err) {
+        console.error('Save epub progress on close error:', err);
       }
     }
 
