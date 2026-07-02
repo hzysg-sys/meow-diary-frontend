@@ -1,5 +1,31 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import ePub, { EpubCFI } from 'epubjs';
+import Mapping from 'epubjs/src/mapping';
+
+// epub.js 计算"当前屏从哪个字开始"时按空格分词，中文整段没有空格会退化成
+// "整段算一个词"——relocated 报出来的位置只有段落级精度，长段落里加的书签
+// 全都指向段首（实测同一长段落内每一屏的 start.cfi 完全相同）。
+// 补丁：按空格切分之外，超过 15 字的连续文本强制按 15 字一块再切，
+// 让位置精度从"一整段"提高到"15 字以内"
+const WORD_CHUNK = 15;
+const origSplitTextNode = Mapping.prototype.splitTextNodeIntoRanges;
+Mapping.prototype.splitTextNodeIntoRanges = function (node, _splitter) {
+  if (node.nodeType !== Node.TEXT_NODE) return origSplitTextNode.call(this, node, _splitter);
+  const text = node.textContent || '';
+  const splitter = _splitter || ' ';
+  const doc = node.ownerDocument;
+  const ranges = [];
+  let segStart = 0;
+  const push = (s, e) => {
+    if (e > s) { const r = doc.createRange(); r.setStart(node, s); r.setEnd(node, e); ranges.push(r); }
+  };
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === splitter) { push(segStart, i); segStart = i + 1; }
+    else if (i - segStart + 1 >= WORD_CHUNK) { push(segStart, i + 1); segStart = i + 1; }
+  }
+  push(segStart, text.length);
+  return ranges.length ? ranges : origSplitTextNode.call(this, node, _splitter);
+};
 import Avatar from './Avatar';
 import TypingIndicator from './TypingIndicator';
 import { sendChatMessage, discussBookPassage } from '../api';
