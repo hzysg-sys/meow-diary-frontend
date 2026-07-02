@@ -419,8 +419,12 @@ export default function ReadTab({ active, sessionId }) {
       currentChapterRef.current = location.start.href || '';
       if (book.locations.length()) {
         setProgress(Math.round(book.locations.percentageFromCfi(cfi) * 100));
-        const idx = book.locations.locationFromCfi(cfi);
-        if (idx >= 0) setPageInfo({ current: idx + 1, total: book.locations.length() });
+      }
+      // 章内真实页码：displayed 来自当前章节的实际排版分页，每翻一次必定 +1；
+      // locations 是按字符数估的虚拟单位，只用来算全书百分比
+      const displayed = location.start.displayed;
+      if (displayed && displayed.total) {
+        setPageInfo({ current: displayed.page, total: displayed.total });
       }
     });
 
@@ -968,7 +972,7 @@ export default function ReadTab({ active, sessionId }) {
           )}
 
           <div className={`reader-footer ${immersive ? 'reader-footer-hidden' : ''}`}>
-            <span>{pageInfo ? `${pageInfo.current}/${pageInfo.total} 页 · ${progress}%` : `${progress}%`}</span>
+            <span>{pageInfo ? `本章 ${pageInfo.current}/${pageInfo.total} 页 · 全书 ${progress}%` : `${progress}%`}</span>
             <div className="reader-progress-track">
               <div className="reader-progress-fill" style={{ width: `${progress}%` }}></div>
             </div>
