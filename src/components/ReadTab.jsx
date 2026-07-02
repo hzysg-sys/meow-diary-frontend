@@ -45,7 +45,6 @@ export default function ReadTab({ active, sessionId }) {
   const [showToc, setShowToc] = useState(false);
   const [tocItems, setTocItems] = useState([]);
   const [expandedToc, setExpandedToc] = useState({});
-  const [debugLog, setDebugLog] = useState([]);
 
   const [highlights, setHighlights] = useState([]);
   const [activeSelection, setActiveSelection] = useState(null);
@@ -74,10 +73,6 @@ export default function ReadTab({ active, sessionId }) {
   const toggleImmersive = useCallback(() => {
     setImmersive(prev => !prev);
   }, []);
-
-  const logDebug = (msg) => {
-    setDebugLog(prev => [...prev.slice(-7), `${Date.now() % 100000} ${msg}`]);
-  };
 
   const queueProgressSave = useCallback((bookId, cfi, pct) => {
     pendingSaveRef.current = { cfi, pct, ts: Date.now() };
@@ -324,7 +319,6 @@ export default function ReadTab({ active, sessionId }) {
     });
 
     rendition.on('relocated', (location) => {
-      logDebug(`relocated ...${location.start.cfi.slice(-18)}`);
       const cfi = location.start.cfi;
       lastLocationRef.current = cfi;
       let pct = progress;
@@ -498,7 +492,6 @@ export default function ReadTab({ active, sessionId }) {
       try {
         const fresh = renditionRef.current.currentLocation();
         const freshCfi = fresh && fresh.start ? fresh.start.cfi : null;
-        logDebug(`close ref=...${(lastLocationRef.current || '').slice(-15)} fresh=...${(freshCfi || '').slice(-15)}`);
         const cfi = freshCfi || lastLocationRef.current;
         if (cfi) {
           let pct = progress;
@@ -781,13 +774,6 @@ export default function ReadTab({ active, sessionId }) {
       {/* 阅读器视图 */}
       {readerOpen && currentBook && (
         <div className={`reader-container ${immersive ? 'reader-immersive' : ''}`} style={{ backgroundColor: bgValue }}>
-          {readerOpen && currentBook?.format === 'epub' && (
-            <div style={{position:'fixed', top:0, left:0, right:0, zIndex:9999,
-              background:'rgba(0,0,0,0.85)', color:'#0f0', fontSize:'10px',
-              padding:'4px', fontFamily:'monospace', maxHeight:'35vh', overflowY:'auto'}}>
-              {debugLog.map((l, i) => <div key={i}>{l}</div>)}
-            </div>
-          )}
           <div className={`reader-header ${immersive ? 'reader-header-hidden' : ''}`}>
             <button className="reader-back-btn" onClick={closeReader}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
