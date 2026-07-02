@@ -288,7 +288,11 @@ export default function ReadTab({ active, sessionId }) {
       let prevStart = null;
       for (let i = 0; i < 20; i++) {
         const loc = rendition.currentLocation();
-        if (!loc || !loc.start || !loc.end) break;
+        if (!loc || !loc.start || !loc.end) {
+          // display 刚落地时 location 可能还没算好，稍等重试而不是放弃校正
+          await new Promise(r => setTimeout(r, 100));
+          continue;
+        }
         if (loc.start.cfi === prevStart) break; // 翻不动了（到书头/书尾）
         prevStart = loc.start.cfi;
         if (comparer.compare(cfi, loc.start.cfi) < 0) await rendition.prev();
