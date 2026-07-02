@@ -383,24 +383,20 @@ export default function ReadTab({ active, sessionId }) {
     });
 
     rendition.hooks.content.register((contents) => {
-      // 拖选手柄靠近页面边缘时，浏览器原生 auto-scroll 会把 iframe 内文档滚出
-      // epub.js 的分栏对齐位置。拖动过程中不干预（避免和分页机制打架），
-      // 只在松手后检测到错位时重新锚定当前页
-      const correctMisalignment = () => {
-        setTimeout(() => {
-          const doc = contents.document;
-          if (!doc || !doc.documentElement) return;
-          const de = doc.documentElement;
-          const body = doc.body;
-          const scrolled = de.scrollLeft || de.scrollTop ||
-            (body && (body.scrollLeft || body.scrollTop));
-          if (scrolled && renditionRef.current && lastLocationRef.current) {
-            displayEpubCfi(lastLocationRef.current);
-          }
-        }, 60);
+      // 拖选到页面边缘时，浏览器原生 auto-scroll 会把 iframe 内文档滚出
+      // epub.js 的分栏对齐位置——眼睛看到的内容从此比 epub.js 内部记录的
+      // 位置靠后一到几屏，书签/页码/划线全跟着偏早，布局也出现半列错位。
+      // 之前"松手后重新锚定"在手机拖选区手柄时经常收不到 touchend，修不干净。
+      // 改为彻底禁止内部滚动：一滚就立刻拉回 0，画面永远和内部位置对齐。
+      // 代价：选区拖到页边缘不再自动翻页，一次只能选当前页内的文字
+      const resetInnerScroll = () => {
+        const de = contents.document.documentElement;
+        const body = contents.document.body;
+        if (de) { if (de.scrollLeft) de.scrollLeft = 0; if (de.scrollTop) de.scrollTop = 0; }
+        if (body) { if (body.scrollLeft) body.scrollLeft = 0; if (body.scrollTop) body.scrollTop = 0; }
       };
-      contents.document.addEventListener('touchend', correctMisalignment);
-      contents.document.addEventListener('mouseup', correctMisalignment);
+      contents.document.addEventListener('scroll', resetInnerScroll, { capture: true, passive: true });
+      contents.window.addEventListener('scroll', resetInnerScroll, { passive: true });
 
       // 翻页：iframe 内按可视区坐标判断（原透明覆盖层会挡住左右边缘的长按选词）。
       // iframe 本身比屏幕宽（整章分栏），clientX 要加上 iframe 相对视口的偏移才是屏幕位置
