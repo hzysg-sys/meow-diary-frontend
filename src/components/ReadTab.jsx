@@ -67,6 +67,7 @@ export default function ReadTab({ active, sessionId }) {
   const lastLocationRef = useRef(null);
   const pendingSaveRef = useRef(null);
   const saveQueueRef = useRef(Promise.resolve());
+  const loadSeqRef = useRef(0);
 
   const fileInputRef = useRef(null);
 
@@ -79,7 +80,7 @@ export default function ReadTab({ active, sessionId }) {
   };
 
   const queueProgressSave = useCallback((bookId, cfi, pct) => {
-    pendingSaveRef.current = { cfi, pct };
+    pendingSaveRef.current = { cfi, pct, ts: Date.now() };
     saveQueueRef.current = saveQueueRef.current.then(async () => {
       const payload = pendingSaveRef.current;
       if (!payload) return;
@@ -88,7 +89,7 @@ export default function ReadTab({ active, sessionId }) {
         await fetch(`${API}/api/books/${bookId}/progress`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reading_progress: payload.pct, reading_location: payload.cfi }),
+          body: JSON.stringify({ reading_progress: payload.pct, reading_location: payload.cfi, saved_at: payload.ts }),
         });
       } catch (err) {
         console.error('Save progress error:', err);
@@ -102,9 +103,12 @@ export default function ReadTab({ active, sessionId }) {
   };
 
   const loadBooks = useCallback(async () => {
+    const seq = ++loadSeqRef.current;
     try {
       const res = await fetch(`${API}/api/books`);
       const data = await res.json();
+      // 迟到的旧响应不允许覆盖更新的书架数据（reading_location 会被回退）
+      if (seq !== loadSeqRef.current) return;
       if (Array.isArray(data)) setBooks(data);
     } catch (err) {
       console.error('Load books error:', err);
@@ -213,7 +217,17 @@ export default function ReadTab({ active, sessionId }) {
     }
   };
 
-  const openReader = async (book) => {
+  const openReader = async (shelfBook) => {
+    // 书架列表 state 可能被迟到的响应污染，打开时单独拉这一本的最新进度
+    let book = shelfBook;
+    try {
+      const res = await fetch(`${API}/api/books/${shelfBook.id}`);
+      const data = await res.json();
+      if (data && data.id) book = data;
+    } catch (err) {
+      console.error('Load fresh book error:', err);
+    }
+
     setCurrentBook(book);
     setReaderOpen(true);
     setProgress(book.reading_progress || 0);
@@ -268,6 +282,25 @@ export default function ReadTab({ active, sessionId }) {
     });
 
     rendition.hooks.content.register((contents) => {
+      // 拖选手柄靠近页面边缘时，浏览器原生 auto-scroll 会把 iframe 内文档滚出
+      // epub.js 的分栏对齐位置。拖动过程中不干预（避免和分页机制打架），
+      // 只在松手后检测到错位时重新锚定当前页
+      const correctMisalignment = () => {
+        setTimeout(() => {
+          const doc = contents.document;
+          if (!doc || !doc.documentElement) return;
+          const de = doc.documentElement;
+          const body = doc.body;
+          const scrolled = de.scrollLeft || de.scrollTop ||
+            (body && (body.scrollLeft || body.scrollTop));
+          if (scrolled && renditionRef.current && lastLocationRef.current) {
+            renditionRef.current.display(lastLocationRef.current);
+          }
+        }, 60);
+      };
+      contents.document.addEventListener('touchend', correctMisalignment);
+      contents.document.addEventListener('mouseup', correctMisalignment);
+
       let debounceTimer;
       contents.document.addEventListener('selectionchange', () => {
         clearTimeout(debounceTimer);
@@ -449,6 +482,7 @@ export default function ReadTab({ active, sessionId }) {
           body: JSON.stringify({
             reading_progress: pct || 0,
             reading_location: String(el.scrollTop),
+            saved_at: Date.now(),
           }),
         });
         setBooks(prev => prev.map(b => b.id === currentBook.id
