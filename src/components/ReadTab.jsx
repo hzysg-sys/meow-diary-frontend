@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import ePub from 'epubjs';
+import ePub, { EpubCFI } from 'epubjs';
 import Avatar from './Avatar';
 import TypingIndicator from './TypingIndicator';
 import { sendChatMessage, discussBookPassage } from '../api';
@@ -275,9 +275,34 @@ export default function ReadTab({ active, sessionId }) {
     }
   };
 
+  // epub.js 的 display(cfi) 有个老毛病：带字符偏移的 CFI 经常只落到目标所在
+  // 段落开头那一屏，段落长时会比实际位置早一到几屏。display 后比较目标 CFI
+  // 是否落在当前屏的 [start, end] 区间内，不在就单页步进修正到准确那一屏
+  const displayEpubCfi = async (cfi) => {
+    const rendition = renditionRef.current;
+    if (!rendition) return;
+    if (!cfi) { await rendition.display(); return; }
+    await rendition.display(cfi);
+    try {
+      const comparer = new EpubCFI();
+      let prevStart = null;
+      for (let i = 0; i < 20; i++) {
+        const loc = rendition.currentLocation();
+        if (!loc || !loc.start || !loc.end) break;
+        if (loc.start.cfi === prevStart) break; // 翻不动了（到书头/书尾）
+        prevStart = loc.start.cfi;
+        if (comparer.compare(cfi, loc.start.cfi) < 0) await rendition.prev();
+        else if (comparer.compare(cfi, loc.end.cfi) > 0) await rendition.next();
+        else break;
+      }
+    } catch (err) {
+      console.error('CFI 定位修正失败:', err);
+    }
+  };
+
   const jumpToBookmark = (bm) => {
     if (currentBook.format === 'epub') {
-      if (bm.cfi && renditionRef.current) renditionRef.current.display(bm.cfi);
+      if (bm.cfi && renditionRef.current) displayEpubCfi(bm.cfi);
     } else if (readerContentRef.current) {
       const el = readerContentRef.current;
       el.scrollTop = ((bm.progress || 0) / 100) * (el.scrollHeight - el.clientHeight);
@@ -370,7 +395,7 @@ export default function ReadTab({ active, sessionId }) {
           const scrolled = de.scrollLeft || de.scrollTop ||
             (body && (body.scrollLeft || body.scrollTop));
           if (scrolled && renditionRef.current && lastLocationRef.current) {
-            renditionRef.current.display(lastLocationRef.current);
+            displayEpubCfi(lastLocationRef.current);
           }
         }, 60);
       };
@@ -408,7 +433,7 @@ export default function ReadTab({ active, sessionId }) {
     });
 
     const loc = currentBook.reading_location;
-    rendition.display(loc || undefined).then(() => {
+    displayEpubCfi(loc || null).then(() => {
       const initial = rendition.currentLocation();
       if (initial && initial.start) lastLocationRef.current = initial.start.cfi;
     });
