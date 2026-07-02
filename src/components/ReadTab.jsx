@@ -45,6 +45,9 @@ export default function ReadTab({ active, sessionId }) {
   const [showToc, setShowToc] = useState(false);
   const [tocItems, setTocItems] = useState([]);
   const [expandedToc, setExpandedToc] = useState({});
+  const [bookmarks, setBookmarks] = useState([]);
+  const [showBookmarks, setShowBookmarks] = useState(false);
+  const [pageInfo, setPageInfo] = useState(null);
 
   const [highlights, setHighlights] = useState([]);
   const [activeSelection, setActiveSelection] = useState(null);
@@ -64,33 +67,18 @@ export default function ReadTab({ active, sessionId }) {
   const readerContentRef = useRef(null);
   const epubSelectionContentsRef = useRef(null);
   const lastLocationRef = useRef(null);
-  const pendingSaveRef = useRef(null);
-  const saveQueueRef = useRef(Promise.resolve());
   const loadSeqRef = useRef(0);
+  const currentChapterRef = useRef('');
+  const activeSelectionRef = useRef(null);
 
   const fileInputRef = useRef(null);
 
+  useEffect(() => {
+    activeSelectionRef.current = activeSelection;
+  }, [activeSelection]);
+
   const toggleImmersive = useCallback(() => {
     setImmersive(prev => !prev);
-  }, []);
-
-  const queueProgressSave = useCallback((bookId, cfi, pct) => {
-    pendingSaveRef.current = { cfi, pct, ts: Date.now() };
-    saveQueueRef.current = saveQueueRef.current.then(async () => {
-      const payload = pendingSaveRef.current;
-      if (!payload) return;
-      pendingSaveRef.current = null;
-      try {
-        await fetch(`${API}/api/books/${bookId}/progress`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reading_progress: payload.pct, reading_location: payload.cfi, saved_at: payload.ts }),
-        });
-      } catch (err) {
-        console.error('Save progress error:', err);
-      }
-    });
-    return saveQueueRef.current;
   }, []);
 
   const toggleTocExpand = (label) => {
@@ -212,6 +200,91 @@ export default function ReadTab({ active, sessionId }) {
     }
   };
 
+  const loadBookmarks = async (bookId) => {
+    try {
+      const res = await fetch(`${API}/api/books/${bookId}/bookmarks`);
+      const data = await res.json();
+      setBookmarks(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Load bookmarks error:', err);
+    }
+  };
+
+  const addBookmark = async () => {
+    if (!currentBook) return;
+    let cfi = null;
+    let pct = progress;
+    let excerpt = '';
+
+    if (currentBook.format === 'epub') {
+      cfi = lastLocationRef.current;
+      if (!cfi) return;
+      const findLabel = (items) => {
+        for (const it of items) {
+          if (it.href && currentChapterRef.current &&
+              currentChapterRef.current.includes(it.href.split('#')[0])) {
+            return it.label.trim();
+          }
+          if (it.subitems && it.subitems.length) {
+            const r = findLabel(it.subitems);
+            if (r) return r;
+          }
+        }
+        return '';
+      };
+      excerpt = findLabel(tocItems) || `位置 ${pct}%`;
+    } else {
+      const el = readerContentRef.current;
+      if (!el) return;
+      pct = Math.round((el.scrollTop / (el.scrollHeight - el.clientHeight)) * 100) || 0;
+      excerpt = `读到 ${pct}%`;
+    }
+
+    try {
+      const res = await fetch(`${API}/api/books/${currentBook.id}/bookmarks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ format: currentBook.format, cfi, progress: pct, excerpt }),
+      });
+      const saved = await res.json();
+      if (saved && saved.id) setBookmarks(prev => [saved, ...prev]);
+
+      // 书签同时充当"最后阅读位置"：下次打开这本书直接落在最新书签
+      const location = currentBook.format === 'epub' ? cfi : String(readerContentRef.current?.scrollTop ?? 0);
+      await fetch(`${API}/api/books/${currentBook.id}/progress`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reading_progress: pct, reading_location: location }),
+      });
+      setBooks(prev => prev.map(b => b.id === currentBook.id
+        ? { ...b, reading_progress: pct, reading_location: location }
+        : b
+      ));
+    } catch (err) {
+      console.error('Add bookmark error:', err);
+    }
+  };
+
+  const deleteBookmark = async (id, e) => {
+    e.stopPropagation();
+    try {
+      await fetch(`${API}/api/bookmarks/${id}`, { method: 'DELETE' });
+      setBookmarks(prev => prev.filter(b => b.id !== id));
+    } catch (err) {
+      console.error('Delete bookmark error:', err);
+    }
+  };
+
+  const jumpToBookmark = (bm) => {
+    if (currentBook.format === 'epub') {
+      if (bm.cfi && renditionRef.current) renditionRef.current.display(bm.cfi);
+    } else if (readerContentRef.current) {
+      const el = readerContentRef.current;
+      el.scrollTop = ((bm.progress || 0) / 100) * (el.scrollHeight - el.clientHeight);
+    }
+    setShowBookmarks(false);
+  };
+
   const openReader = async (shelfBook) => {
     // 书架列表 state 可能被迟到的响应污染，打开时单独拉这一本的最新进度
     let book = shelfBook;
@@ -226,6 +299,9 @@ export default function ReadTab({ active, sessionId }) {
     setCurrentBook(book);
     setReaderOpen(true);
     setProgress(book.reading_progress || 0);
+    setPageInfo(null);
+    currentChapterRef.current = '';
+    loadBookmarks(book.id);
 
     fetch(`${API}/api/books/${book.id}/highlights`)
       .then(res => res.json())
@@ -263,6 +339,11 @@ export default function ReadTab({ active, sessionId }) {
     });
     renditionRef.current = rendition;
 
+    // 拖选到边缘时浏览器会 auto-scroll 这个容器造成翻页；overflow hidden 后
+    // epub.js 编程式赋值 scrollLeft 翻页不受影响，原生 auto-scroll 则失效
+    const epubContainer = viewerRef.current.querySelector('.epub-container');
+    if (epubContainer) epubContainer.style.overflow = 'hidden';
+
     rendition.themes.default({
       body: {
         'background': bgValue,
@@ -296,6 +377,20 @@ export default function ReadTab({ active, sessionId }) {
       contents.document.addEventListener('touchend', correctMisalignment);
       contents.document.addEventListener('mouseup', correctMisalignment);
 
+      // 翻页：iframe 内按可视区坐标判断（原透明覆盖层会挡住左右边缘的长按选词）。
+      // iframe 本身比屏幕宽（整章分栏），clientX 要加上 iframe 相对视口的偏移才是屏幕位置
+      contents.document.addEventListener('click', (e) => {
+        if (activeSelectionRef.current) return; // 操作栏可见时，这次点击只用于收起它
+        const sel = contents.window.getSelection();
+        if (sel && sel.toString().trim()) return;
+        const frameRect = contents.window.frameElement.getBoundingClientRect();
+        const x = frameRect.left + e.clientX;
+        const w = window.innerWidth;
+        if (x < w / 3) renditionRef.current && renditionRef.current.prev();
+        else if (x > (w * 2) / 3) renditionRef.current && renditionRef.current.next();
+        else toggleImmersive();
+      });
+
       let debounceTimer;
       contents.document.addEventListener('selectionchange', () => {
         clearTimeout(debounceTimer);
@@ -321,13 +416,12 @@ export default function ReadTab({ active, sessionId }) {
     rendition.on('relocated', (location) => {
       const cfi = location.start.cfi;
       lastLocationRef.current = cfi;
-      let pct = progress;
+      currentChapterRef.current = location.start.href || '';
       if (book.locations.length()) {
-        pct = Math.round(book.locations.percentageFromCfi(cfi) * 100);
-        setProgress(pct);
+        setProgress(Math.round(book.locations.percentageFromCfi(cfi) * 100));
+        const idx = book.locations.locationFromCfi(cfi);
+        if (idx >= 0) setPageInfo({ current: idx + 1, total: book.locations.length() });
       }
-      setBooks(prev => prev.map(b => b.id === currentBook.id ? { ...b, reading_progress: pct, reading_location: cfi } : b));
-      queueProgressSave(currentBook.id, cfi, pct);
     });
 
     book.ready.then(() => {
@@ -346,15 +440,35 @@ export default function ReadTab({ active, sessionId }) {
     };
   }, [readerOpen, currentBook?.id]);
 
-  // epub 划线回显
+  // 点击有讨论的划线段落，回看当时的对话（继续输入会作为普通追问发给小克）
+  const openHighlightRecall = (h) => {
+    if (!h || !h.has_discussion) return;
+    const turns = [];
+    if (h.user_thought) turns.push({ role: 'user', content: h.user_thought });
+    if (h.ai_reply) turns.push({ role: 'assistant', content: h.ai_reply });
+    setDiscussPassage({ text: h.selected_text });
+    setDiscussTurns(turns);
+    setDiscussFirstTurnDone(true);
+    setDiscussFull(false);
+    setDiscussOpen(true);
+  };
+
+  // epub 划线回显：普通划线是色块，带讨论的是下划线（可点击回看）
   useEffect(() => {
     if (!epubReady || !renditionRef.current) return;
     highlights.filter(h => h.format === 'epub' && h.cfi_range).forEach(h => {
       try {
-        renditionRef.current.annotations.add(
-          'highlight', h.cfi_range, {}, undefined, 'txt-highlight-epub',
-          { fill: h.color, 'fill-opacity': '0.55', 'mix-blend-mode': 'multiply' }
-        );
+        if (h.has_discussion) {
+          renditionRef.current.annotations.add(
+            'underline', h.cfi_range, {}, () => openHighlightRecall(h), 'epub-underline-discussed',
+            { stroke: '#c98a98', 'stroke-width': '2px', 'stroke-opacity': '0.8' }
+          );
+        } else {
+          renditionRef.current.annotations.add(
+            'highlight', h.cfi_range, {}, undefined, 'txt-highlight-epub',
+            { fill: h.color, 'fill-opacity': '0.55', 'mix-blend-mode': 'multiply' }
+          );
+        }
       } catch (err) { /* cfi 可能因版本差异失效，忽略单条 */ }
     });
   }, [epubReady, highlights]);
@@ -465,47 +579,7 @@ export default function ReadTab({ active, sessionId }) {
     dismissSelection();
   };
 
-  const closeReader = async () => {
-    if (currentBook && currentBook.format === 'txt' && readerContentRef.current) {
-      const el = readerContentRef.current;
-      const pct = Math.round((el.scrollTop / (el.scrollHeight - el.clientHeight)) * 100);
-      try {
-        await fetch(`${API}/api/books/${currentBook.id}/progress`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            reading_progress: pct || 0,
-            reading_location: String(el.scrollTop),
-            saved_at: Date.now(),
-          }),
-        });
-        setBooks(prev => prev.map(b => b.id === currentBook.id
-          ? { ...b, reading_progress: pct || 0, reading_location: String(el.scrollTop) }
-          : b
-        ));
-      } catch (err) {
-        console.error('Save progress error:', err);
-      }
-    }
-
-    if (currentBook && currentBook.format === 'epub' && renditionRef.current) {
-      try {
-        const fresh = renditionRef.current.currentLocation();
-        const freshCfi = fresh && fresh.start ? fresh.start.cfi : null;
-        const cfi = freshCfi || lastLocationRef.current;
-        if (cfi) {
-          let pct = progress;
-          if (epubRef.current && epubRef.current.locations.length()) {
-            pct = Math.round(epubRef.current.locations.percentageFromCfi(cfi) * 100);
-          }
-          await queueProgressSave(currentBook.id, cfi, pct);
-          setBooks(prev => prev.map(b => b.id === currentBook.id ? { ...b, reading_progress: pct, reading_location: cfi } : b));
-        }
-      } catch (err) {
-        console.error('Save epub progress on close error:', err);
-      }
-    }
-
+  const closeReader = () => {
     if (renditionRef.current) renditionRef.current.destroy();
     if (epubRef.current) epubRef.current.destroy();
     renditionRef.current = null;
@@ -519,6 +593,9 @@ export default function ReadTab({ active, sessionId }) {
     setShowBgPanel(false);
     setTocItems([]);
     setExpandedToc({});
+    setShowBookmarks(false);
+    setBookmarks([]);
+    setPageInfo(null);
     setHighlights([]);
     setActiveSelection(null);
     setEpubReady(false);
@@ -534,9 +611,6 @@ export default function ReadTab({ active, sessionId }) {
     }
     setShowToc(false);
   };
-
-  const prevPage = () => renditionRef.current && renditionRef.current.prev();
-  const nextPage = () => renditionRef.current && renditionRef.current.next();
 
   const selectPresetBg = async (value) => {
     setBgType('preset');
@@ -573,6 +647,8 @@ export default function ReadTab({ active, sessionId }) {
         end: h.end_line_index === lineIndex ? h.end_offset : lineText.length,
         color: h.color,
         id: h.id,
+        discussed: h.has_discussion,
+        h,
       }))
       .sort((a, b) => a.start - b.start);
 
@@ -593,7 +669,15 @@ export default function ReadTab({ active, sessionId }) {
       <p key={i} data-line-index={i}>
         {getLineSegments(i, line).map((seg, si) =>
           seg.hl ? (
-            <mark key={si} className="txt-highlight" style={{ backgroundColor: seg.hl.color }} data-highlight-id={seg.hl.id}>
+            <mark
+              key={si}
+              className={seg.hl.discussed ? 'txt-highlight txt-highlight-discussed' : 'txt-highlight'}
+              style={seg.hl.discussed
+                ? { backgroundColor: 'transparent', borderBottom: `2px solid ${seg.hl.color || '#c98a98'}` }
+                : { backgroundColor: seg.hl.color }}
+              data-highlight-id={seg.hl.id}
+              onClick={seg.hl.discussed ? (e) => { e.stopPropagation(); openHighlightRecall(seg.hl.h); } : undefined}
+            >
               {seg.text}
             </mark>
           ) : (
@@ -645,15 +729,18 @@ export default function ReadTab({ active, sessionId }) {
         const data = await discussBookPassage(currentBook.id, payload);
         reply = data.reply;
         if (data.highlightId) {
-          setHighlights(prev => [...prev, {
+          const newHl = {
             id: data.highlightId,
             ...buildHighlightPayload(discussPassage, HIGHLIGHT_COLORS[1]),
             has_discussion: true,
-          }]);
+            user_thought: text,
+            ai_reply: reply,
+          };
+          setHighlights(prev => [...prev, newHl]);
           if (discussPassage.format === 'epub' && renditionRef.current) {
             renditionRef.current.annotations.add(
-              'highlight', discussPassage.cfiRange, {}, undefined, 'txt-highlight-epub',
-              { fill: HIGHLIGHT_COLORS[1], 'fill-opacity': '0.55', 'mix-blend-mode': 'multiply' }
+              'underline', discussPassage.cfiRange, {}, () => openHighlightRecall(newHl), 'epub-underline-discussed',
+              { stroke: '#c98a98', 'stroke-width': '2px', 'stroke-opacity': '0.8' }
             );
           }
         }
@@ -783,7 +870,7 @@ export default function ReadTab({ active, sessionId }) {
             </button>
             <span className="reader-title-text">{currentBook.title}</span>
             {currentBook.format === 'epub' && (
-              <button className="reader-toc-btn" onClick={() => { setImmersive(false); setShowToc(prev => !prev); setShowBgPanel(false); }}>
+              <button className="reader-toc-btn" onClick={() => { setImmersive(false); setShowToc(prev => !prev); setShowBookmarks(false); setShowBgPanel(false); }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="3" y1="6" x2="21" y2="6" />
                   <line x1="3" y1="12" x2="15" y2="12" />
@@ -791,7 +878,12 @@ export default function ReadTab({ active, sessionId }) {
                 </svg>
               </button>
             )}
-            <button className="reader-setting-btn" onClick={() => { setShowBgPanel(prev => !prev); setShowToc(false); }}>
+            <button className="reader-toc-btn" onClick={() => { setImmersive(false); setShowBookmarks(prev => !prev); setShowToc(false); setShowBgPanel(false); }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+              </svg>
+            </button>
+            <button className="reader-setting-btn" onClick={() => { setShowBgPanel(prev => !prev); setShowToc(false); setShowBookmarks(false); }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="3" />
                 <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
@@ -818,6 +910,31 @@ export default function ReadTab({ active, sessionId }) {
             </div>
           )}
 
+          {showBookmarks && !immersive && (
+            <div className="toc-panel">
+              <div className="toc-panel-title">书签</div>
+              <button className="bookmark-add-btn" onClick={addBookmark}>＋ 把当前位置加入书签</button>
+              {bookmarks.length > 0 ? (
+                <div className="toc-list">
+                  {bookmarks.map(bm => (
+                    <div key={bm.id} className="toc-item" onClick={() => jumpToBookmark(bm)}>
+                      <span className="toc-item-label">
+                        {bm.excerpt || `位置 ${bm.progress ?? 0}%`}
+                        <span className="bookmark-meta">
+                          {bm.progress != null ? `${bm.progress}% · ` : ''}
+                          {bm.created_at ? new Date(bm.created_at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
+                        </span>
+                      </span>
+                      <button className="bookmark-del-btn" onClick={(e) => deleteBookmark(bm.id, e)}>✕</button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="toc-empty">还没有书签，读到哪里就存哪里～</div>
+              )}
+            </div>
+          )}
+
           {showBgPanel && !immersive && (
             <div className="bg-panel">
               <div className="bg-panel-title">阅读背景</div>
@@ -839,11 +956,6 @@ export default function ReadTab({ active, sessionId }) {
           {currentBook.format === 'epub' && (
             <div className="epub-reader" style={readerBgStyle}>
               <div ref={viewerRef} className="epub-viewer"></div>
-              <div className="reader-tap-zones">
-                <div className="tap-zone tap-left" onClick={prevPage}></div>
-                <div className="tap-zone tap-center"></div>
-                <div className="tap-zone tap-right" onClick={nextPage}></div>
-              </div>
             </div>
           )}
 
@@ -856,7 +968,7 @@ export default function ReadTab({ active, sessionId }) {
           )}
 
           <div className={`reader-footer ${immersive ? 'reader-footer-hidden' : ''}`}>
-            <span>{progress}%</span>
+            <span>{pageInfo ? `${pageInfo.current}/${pageInfo.total} 页 · ${progress}%` : `${progress}%`}</span>
             <div className="reader-progress-track">
               <div className="reader-progress-fill" style={{ width: `${progress}%` }}></div>
             </div>
