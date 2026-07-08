@@ -28,7 +28,7 @@ Mapping.prototype.splitTextNodeIntoRanges = function (node, _splitter) {
 };
 import Avatar from './Avatar';
 import TypingIndicator from './TypingIndicator';
-import { sendChatMessage, discussBookPassage } from '../api';
+import { sendChatMessage, discussBookPassage, apiFetch } from '../api';
 
 const API =
   import.meta.env.VITE_API_BASE_URL ||
@@ -114,7 +114,7 @@ export default function ReadTab({ active, sessionId }) {
   const loadBooks = useCallback(async () => {
     const seq = ++loadSeqRef.current;
     try {
-      const res = await fetch(`${API}/api/books`);
+      const res = await apiFetch(`${API}/api/books`);
       const data = await res.json();
       // 迟到的旧响应不允许覆盖更新的书架数据（reading_location 会被回退）
       if (seq !== loadSeqRef.current) return;
@@ -126,7 +126,7 @@ export default function ReadTab({ active, sessionId }) {
 
   const loadBgSettings = useCallback(async () => {
     try {
-      const res = await fetch(`${API}/api/settings`);
+      const res = await apiFetch(`${API}/api/settings`);
       const data = await res.json();
       if (data.readerBgType && data.readerBgType !== 'custom') setBgType(data.readerBgType);
       if (data.readerBgValue && data.readerBgType !== 'custom') setBgValue(data.readerBgValue);
@@ -199,7 +199,7 @@ export default function ReadTab({ active, sessionId }) {
       formData.append('format', ext);
       if (coverBase64) formData.append('cover_base64', coverBase64);
 
-      const res = await fetch(`${API}/api/books/upload`, {
+      const res = await apiFetch(`${API}/api/books/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -219,7 +219,7 @@ export default function ReadTab({ active, sessionId }) {
     e.stopPropagation();
     if (!confirm('确认删除这本书？')) return;
     try {
-      await fetch(`${API}/api/books/${id}`, { method: 'DELETE' });
+      await apiFetch(`${API}/api/books/${id}`, { method: 'DELETE' });
       await loadBooks();
     } catch (err) {
       console.error('Delete error:', err);
@@ -228,7 +228,7 @@ export default function ReadTab({ active, sessionId }) {
 
   const loadBookmarks = async (bookId) => {
     try {
-      const res = await fetch(`${API}/api/books/${bookId}/bookmarks`);
+      const res = await apiFetch(`${API}/api/books/${bookId}/bookmarks`);
       const data = await res.json();
       setBookmarks(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -267,7 +267,7 @@ export default function ReadTab({ active, sessionId }) {
     }
 
     try {
-      const res = await fetch(`${API}/api/books/${currentBook.id}/bookmarks`, {
+      const res = await apiFetch(`${API}/api/books/${currentBook.id}/bookmarks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ format: currentBook.format, cfi, progress: pct, excerpt }),
@@ -277,7 +277,7 @@ export default function ReadTab({ active, sessionId }) {
 
       // 书签同时充当"最后阅读位置"：下次打开这本书直接落在最新书签
       const location = currentBook.format === 'epub' ? cfi : String(readerContentRef.current?.scrollTop ?? 0);
-      await fetch(`${API}/api/books/${currentBook.id}/progress`, {
+      await apiFetch(`${API}/api/books/${currentBook.id}/progress`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reading_progress: pct, reading_location: location }),
@@ -294,7 +294,7 @@ export default function ReadTab({ active, sessionId }) {
   const deleteBookmark = async (id, e) => {
     e.stopPropagation();
     try {
-      await fetch(`${API}/api/bookmarks/${id}`, { method: 'DELETE' });
+      await apiFetch(`${API}/api/bookmarks/${id}`, { method: 'DELETE' });
       setBookmarks(prev => prev.filter(b => b.id !== id));
     } catch (err) {
       console.error('Delete bookmark error:', err);
@@ -344,7 +344,7 @@ export default function ReadTab({ active, sessionId }) {
     // 书架列表 state 可能被迟到的响应污染，打开时单独拉这一本的最新进度
     let book = shelfBook;
     try {
-      const res = await fetch(`${API}/api/books/${shelfBook.id}`);
+      const res = await apiFetch(`${API}/api/books/${shelfBook.id}`);
       const data = await res.json();
       if (data && data.id) book = data;
     } catch (err) {
@@ -358,7 +358,7 @@ export default function ReadTab({ active, sessionId }) {
     currentChapterRef.current = '';
     loadBookmarks(book.id);
 
-    fetch(`${API}/api/books/${book.id}/highlights`)
+    apiFetch(`${API}/api/books/${book.id}/highlights`)
       .then(res => res.json())
       .then(data => setHighlights(Array.isArray(data) ? data : []))
       .catch(err => console.error('Load highlights error:', err));
@@ -615,7 +615,7 @@ export default function ReadTab({ active, sessionId }) {
     if (!activeSelection || !currentBook) return;
     const sel = activeSelection;
     try {
-      const res = await fetch(`${API}/api/books/${currentBook.id}/highlights`, {
+      const res = await apiFetch(`${API}/api/books/${currentBook.id}/highlights`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(buildHighlightPayload(sel, color)),
@@ -671,7 +671,7 @@ export default function ReadTab({ active, sessionId }) {
     setBgType('preset');
     setBgValue(value);
     try {
-      await fetch(`${API}/api/settings`, {
+      await apiFetch(`${API}/api/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ readerBgType: 'preset', readerBgValue: value }),
@@ -770,7 +770,7 @@ export default function ReadTab({ active, sessionId }) {
     try {
       let sid = sessionId;
       if (!sid || Number.isNaN(sid)) {
-        const sessions = await fetch(`${API}/api/sessions`).then(r => r.json());
+        const sessions = await apiFetch(`${API}/api/sessions`).then(r => r.json());
         sid = sessions?.[0]?.id;
       }
       let reply;
