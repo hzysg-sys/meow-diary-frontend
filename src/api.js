@@ -100,8 +100,16 @@ export async function deleteMemory(id) {
   }
 }
 
+// 用户设备本地时间字符串（发消息时捎给后端，给小克做时间感知）
+function clientTimeString() {
+  return new Date().toLocaleString('zh-CN', {
+    month: 'long', day: 'numeric', weekday: 'long',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  })
+}
+
 export async function sendChatMessage(sessionId, content, imageBase64 = null, imageType = null) {
-  const body = { session_id: sessionId, content }
+  const body = { session_id: sessionId, content, client_time: clientTimeString() }
   if (imageBase64) {
     body.image_base64 = imageBase64
     body.image_type = imageType
@@ -176,7 +184,7 @@ export async function discussBookPassage(bookId, payload) {
   const res = await apiFetch(`${API_BASE_URL}/api/books/${bookId}/discuss`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, client_time: clientTimeString() }),
   })
   const data = await res.json().catch(() => null)
   if (!res.ok) {
