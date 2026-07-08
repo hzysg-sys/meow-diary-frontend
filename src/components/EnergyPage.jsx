@@ -81,12 +81,12 @@ export default function EnergyPage({ show, onBack }) {
 
   return (
     <div id="energy-page" className={show ? 'show' : ''}>
-      <div className="memory-top-bar">
-        <button className="memory-back-btn" onClick={onBack}>
+      <div className="energy-top-bar">
+        <button className="memory-back-btn energy-back-btn" onClick={onBack}>
           <BackIcon />
           <span>返回主页</span>
         </button>
-        <h1 className="memory-title">精力</h1>
+        <h1 className="energy-title">精力</h1>
       </div>
 
       <div className="memory-body">

@@ -2283,6 +2283,27 @@
 }
 
 /* ---- 精力页 ---- */
+.energy-top-bar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #ececec;
+  background: #ffffff;
+  z-index: 5;
+}
+.energy-back-btn {
+  position: absolute;
+  left: 16px;
+}
+.energy-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: #57534e;
+  margin: 0;
+}
 #energy-page {
   display: none;
   height: 100vh;
