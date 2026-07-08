@@ -115,6 +115,7 @@ export default function ReadTab({ active, sessionId }) {
     const seq = ++loadSeqRef.current;
     try {
       const res = await apiFetch(`${API}/api/books`);
+      if (!res.ok) throw new Error(`加载书架失败 (${res.status})`);
       const data = await res.json();
       // 迟到的旧响应不允许覆盖更新的书架数据（reading_location 会被回退）
       if (seq !== loadSeqRef.current) return;
@@ -127,6 +128,7 @@ export default function ReadTab({ active, sessionId }) {
   const loadBgSettings = useCallback(async () => {
     try {
       const res = await apiFetch(`${API}/api/settings`);
+      if (!res.ok) throw new Error(`加载阅读背景失败 (${res.status})`);
       const data = await res.json();
       if (data.readerBgType && data.readerBgType !== 'custom') setBgType(data.readerBgType);
       if (data.readerBgValue && data.readerBgType !== 'custom') setBgValue(data.readerBgValue);
@@ -229,6 +231,7 @@ export default function ReadTab({ active, sessionId }) {
   const loadBookmarks = async (bookId) => {
     try {
       const res = await apiFetch(`${API}/api/books/${bookId}/bookmarks`);
+      if (!res.ok) throw new Error(`加载书签失败 (${res.status})`);
       const data = await res.json();
       setBookmarks(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -620,6 +623,7 @@ export default function ReadTab({ active, sessionId }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(buildHighlightPayload(sel, color)),
       });
+      if (!res.ok) throw new Error(`保存划线失败 (${res.status})`);
       const saved = await res.json();
       setHighlights(prev => [...prev, saved]);
       if (sel.format === 'epub' && renditionRef.current) {
@@ -671,11 +675,12 @@ export default function ReadTab({ active, sessionId }) {
     setBgType('preset');
     setBgValue(value);
     try {
-      await apiFetch(`${API}/api/settings`, {
+      const res = await apiFetch(`${API}/api/settings`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ readerBgType: 'preset', readerBgValue: value }),
       });
+      if (!res.ok) throw new Error(`保存背景失败 (${res.status})`);
     } catch (err) {
       console.error('Save bg error:', err);
     }

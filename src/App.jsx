@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, lazy, Suspense } from 'react'
 import './App.css'
 import Splash from './components/Splash'
 import Home from './components/Home'
@@ -11,7 +11,8 @@ import TabBar from './components/TabBar'
 import ChatListTab from './components/ChatListTab'
 import HealthTab from './components/HealthTab'
 import MailTab from './components/MailTab'
-import ReadTab from './components/ReadTab'
+// epub.js 体积大，阅读模块单独分包按需加载
+const ReadTab = lazy(() => import('./components/ReadTab'))
 import { fetchSessions, createSession } from './api'
 
 const VIEW = {
@@ -82,7 +83,9 @@ function App() {
           <ChatListTab show={activeTab === 'chat'} />
           <HealthTab active={activeTab === 'health'} onNavigateToChat={(sid) => goChat(sid)} />
           <MailTab show={activeTab === 'mail'} />
-          <ReadTab active={activeTab === 'read'} sessionId={currentSessionId} />
+          <Suspense fallback={null}>
+            <ReadTab active={activeTab === 'read'} sessionId={currentSessionId} />
+          </Suspense>
         </div>
         <TabBar
           activeTab={activeTab}
