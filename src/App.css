@@ -2290,8 +2290,10 @@
   align-items: center;
   justify-content: center;
   padding: 20px 24px;
-  border-bottom: 1px solid #ececec;
-  background: #ffffff;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   z-index: 5;
 }
 .energy-back-btn {
@@ -2310,7 +2312,8 @@
   height: 100dvh;
   width: 100%;
   overflow-y: auto;
-  background: #ffffff;
+  /* 背景图缺失时回落到浅粉纯色 */
+  background: #fdf6f7 url('/backgrounds/energy-bg.png') top center / cover no-repeat;
 }
 #energy-page.show {
   display: block;
@@ -2319,10 +2322,12 @@
   display: flex;
   align-items: center;
   gap: 14px;
-  background: #faf3f4;
+  background: rgba(255, 255, 255, 0.62);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border-radius: 18px;
   padding: 18px 20px;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 .energy-mode-emoji {
   font-size: 32px;
@@ -2342,7 +2347,12 @@
   display: flex;
   flex-direction: column;
   gap: 18px;
-  margin-bottom: 26px;
+  margin-bottom: 20px;
+  background: rgba(255, 255, 255, 0.62);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 18px;
+  padding: 20px;
 }
 .energy-stat-head {
   display: flex;
@@ -2363,7 +2373,7 @@
 .energy-stat-track {
   height: 10px;
   border-radius: 5px;
-  background: #f3eeee;
+  background: rgba(201, 138, 152, 0.14);
   overflow: hidden;
 }
 .energy-stat-fill {
@@ -2379,9 +2389,10 @@
 }
 .energy-meta {
   font-size: 12px;
-  color: #a8a29e;
+  color: #9b8f8a;
   line-height: 1.9;
   margin-bottom: 20px;
+  padding: 0 6px;
 }
 .energy-roll-btn {
   width: 100%;
@@ -2398,10 +2409,12 @@
   opacity: 0.6;
 }
 .energy-phase-card {
-  background: #fbf6f2;
+  background: rgba(255, 255, 255, 0.62);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border-radius: 18px;
   padding: 16px 20px 18px;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 .energy-phase-head {
   display: flex;
