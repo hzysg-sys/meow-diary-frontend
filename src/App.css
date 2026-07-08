@@ -2313,7 +2313,7 @@
   width: 100%;
   overflow-y: auto;
   /* 背景图缺失时回落到浅粉纯色 */
-  background: #fdf6f7 url('/backgrounds/energy-bg.png') top center / cover no-repeat;
+  background: #fdf6f7 url('/backgrounds/energy-bg.jpg') top center / cover no-repeat;
 }
 #energy-page.show {
   display: block;
