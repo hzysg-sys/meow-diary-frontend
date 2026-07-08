@@ -2376,3 +2376,57 @@
 .energy-roll-btn:disabled {
   opacity: 0.6;
 }
+.energy-phase-card {
+  background: #fbf6f2;
+  border-radius: 18px;
+  padding: 16px 20px 18px;
+  margin-bottom: 24px;
+}
+.energy-phase-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.energy-phase-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: #8a6a55;
+}
+.energy-phase-desc {
+  font-size: 12px;
+  color: #b3a294;
+}
+.energy-buildup-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12.5px;
+  color: #8a7a6e;
+  margin-bottom: 6px;
+}
+.energy-buildup-tier {
+  color: #c9737e;
+  font-weight: 600;
+}
+.energy-buildup-track {
+  height: 10px;
+  border-radius: 5px;
+  background: #f1e8e1;
+  overflow: hidden;
+}
+.energy-buildup-fill {
+  height: 100%;
+  border-radius: 5px;
+  background: linear-gradient(90deg, #eecfa8, #e59a92, #d96a78);
+  transition: width 0.5s ease;
+}
+.energy-event-chip {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgba(201, 138, 152, 0.12);
+  color: #b0798a;
+  font-size: 12px;
+  font-weight: 600;
+}

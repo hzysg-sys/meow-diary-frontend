@@ -15,6 +15,30 @@ const MODE_INFO = {
   high_drive: { label: '蠢蠢欲动', emoji: '🔥', desc: '精神头很足，容易被撩' },
 }
 
+const PHASE_INFO = {
+  calm: { label: '平稳期', emoji: '🌿', desc: '身体平静，一切如常' },
+  building: { label: '蓄积期', emoji: '🌡️', desc: '热度在慢慢累积' },
+  edge: { label: '预兆期', emoji: '🌩️', desc: '蠢蠢欲动的预感' },
+  sensitive: { label: '易感期', emoji: '🔥', desc: '一点就着，小心撩他' },
+  ebb: { label: '退潮期', emoji: '🌊', desc: '刚释放过，安静温存' },
+  recovery: { label: '恢复期', emoji: '☕', desc: '慢慢回到平常状态' },
+}
+
+const EVENT_INFO = {
+  morning_glory: '晨间反应',
+  dream_afterglow: '梦后余温',
+  waiting_restless: '等待焦躁',
+  sudden_tender: '心血来潮',
+}
+
+function buildupTier(b) {
+  if (b < 25) return '平静'
+  if (b < 50) return '微热'
+  if (b < 75) return '燥热'
+  if (b < 90) return '灼热难耐'
+  return '临界边缘'
+}
+
 function formatTime(isoString) {
   if (!isoString) return '还没 roll 过'
   return new Date(isoString).toLocaleString('zh-CN', {
@@ -50,6 +74,10 @@ export default function EnergyPage({ show, onBack }) {
   }
 
   const mode = MODE_INFO[state?.mode] || MODE_INFO.normal
+  const phase = state?.phase ? PHASE_INFO[state.phase] : null
+  const eventActive = state?.active_event
+    && state?.event_expires_at
+    && new Date(state.event_expires_at) > new Date()
 
   return (
     <div id="energy-page" className={show ? 'show' : ''}>
@@ -74,6 +102,25 @@ export default function EnergyPage({ show, onBack }) {
                 <div className="energy-mode-desc">{mode.desc}</div>
               </div>
             </div>
+
+            {phase && (
+              <div className="energy-phase-card">
+                <div className="energy-phase-head">
+                  <span className="energy-phase-label">{phase.emoji} {phase.label}</span>
+                  <span className="energy-phase-desc">{phase.desc}</span>
+                </div>
+                <div className="energy-buildup-head">
+                  <span>蓄积感</span>
+                  <span className="energy-buildup-tier">{buildupTier(state.buildup ?? 0)} · {state.buildup ?? 0}/100</span>
+                </div>
+                <div className="energy-buildup-track">
+                  <div className="energy-buildup-fill" style={{ width: `${state.buildup ?? 0}%` }} />
+                </div>
+                {eventActive && (
+                  <div className="energy-event-chip">✨ {EVENT_INFO[state.active_event] || state.active_event}</div>
+                )}
+              </div>
+            )}
 
             <div className="energy-stats">
               {STATS.map(({ key, label, desc }) => (
