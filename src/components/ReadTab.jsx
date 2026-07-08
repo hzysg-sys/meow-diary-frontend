@@ -53,6 +53,12 @@ const PRESET_BGS = [
 
 const HIGHLIGHT_COLORS = ['#faeef0', '#f3dde1', '#ecd4da', '#f2e8e2'];
 
+// 小克的笔迹色（淡青蓝，与用户的胭脂粉区分）
+const AI_HIGHLIGHT_COLOR = '#dce7f2';
+const AI_UNDERLINE_STROKE = '#8fa8c8';
+// 连续阅读满这么多分钟后，触发一次小克陪读划线（每次打开书最多一次）
+const COMPANION_READ_AFTER_MIN = 10;
+
 export default function ReadTab({ active, sessionId }) {
   const [books, setBooks] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -98,6 +104,8 @@ export default function ReadTab({ active, sessionId }) {
   const activeSelectionRef = useRef(null);
 
   const fileInputRef = useRef(null);
+  const sessionMinutesRef = useRef(0);
+  const companionDoneRef = useRef(false);
 
   useEffect(() => {
     activeSelectionRef.current = activeSelection;
@@ -498,9 +506,131 @@ export default function ReadTab({ active, sessionId }) {
     };
   }, [readerOpen, currentBook?.id]);
 
-  // 点击有讨论的划线段落，回看当时的对话（继续输入会作为普通追问发给小克）
+  // ---- 陪读系统：阅读打点 + 小克自己的划线批注（双色笔迹） ----
+
+  // 取她正在读的文本片段（txt 按滚动位置截取，epub 取当前章节可见内容）
+  const getReadingExcerpt = () => {
+    if (currentBook.format === 'txt') {
+      const el = readerContentRef.current;
+      if (!el || !bookContent) return null;
+      const pct = el.scrollTop / Math.max(1, el.scrollHeight - el.clientHeight);
+      const pos = Math.floor(bookContent.length * pct);
+      return bookContent.slice(Math.max(0, pos - 1000), pos + 3000);
+    }
+    const contents = renditionRef.current?.getContents?.()[0];
+    const text = contents?.document?.body?.innerText || '';
+    return text ? text.slice(0, 4000) : null;
+  };
+
+  // 在 txt 内容里定位一段原文（行号 + 偏移，与 renderTxtContent 的行索引一致）
+  const locateInTxt = (needle) => {
+    const lines = bookContent.split('\n').filter(l => l.trim());
+    for (let i = 0; i < lines.length; i++) {
+      const idx = lines[i].indexOf(needle);
+      if (idx >= 0) return { lineIndex: i, endLineIndex: i, startOffset: idx, endOffset: idx + needle.length };
+    }
+    return null;
+  };
+
+  // 在 epub 当前章节里定位一段原文，返回 CFI（跨文本节点的句子找不到就放弃）
+  const locateInEpub = (needle) => {
+    const contents = renditionRef.current?.getContents?.()[0];
+    if (!contents) return null;
+    const walker = contents.document.createTreeWalker(contents.document.body, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      const idx = (node.textContent || '').indexOf(needle);
+      if (idx >= 0) {
+        const range = contents.document.createRange();
+        range.setStart(node, idx);
+        range.setEnd(node, idx + needle.length);
+        return contents.cfiFromRange(range);
+      }
+    }
+    return null;
+  };
+
+  const runCompanionRead = async () => {
+    const excerpt = getReadingExcerpt();
+    if (!excerpt || excerpt.length < 200) return;
+
+    const res = await apiFetch(`${API}/api/books/${currentBook.id}/companion-pick`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ excerpt }),
+    });
+    if (!res.ok) return;
+    const { picks } = await res.json();
+
+    for (const pick of (picks || [])) {
+      if (!pick?.text || !pick?.note) continue;
+      // 模型可能改写原文导致找不到，退一步用前 12 字前缀匹配
+      let payload = null;
+      let matched = null;
+      for (const cand of [pick.text.trim(), pick.text.trim().slice(0, 12)]) {
+        if (cand.length < 6) break;
+        if (currentBook.format === 'txt') {
+          const loc = locateInTxt(cand);
+          if (loc) {
+            payload = { format: 'txt', line_index: loc.lineIndex, end_line_index: loc.endLineIndex, start_offset: loc.startOffset, end_offset: loc.endOffset };
+            matched = cand;
+            break;
+          }
+        } else {
+          const cfi = locateInEpub(cand);
+          if (cfi) {
+            payload = { format: 'epub', cfi_range: cfi };
+            matched = cand;
+            break;
+          }
+        }
+      }
+      if (!payload) continue;
+
+      const saveRes = await apiFetch(`${API}/api/books/${currentBook.id}/highlights`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, selected_text: matched, color: AI_HIGHLIGHT_COLOR, author: 'ai', ai_reply: pick.note }),
+      });
+      if (!saveRes.ok) continue;
+      const saved = await saveRes.json();
+      setHighlights(prev => [...prev, saved]);
+      if (payload.format === 'epub' && renditionRef.current) {
+        renditionRef.current.annotations.add(
+          'underline', payload.cfi_range, {}, () => openHighlightRecall(saved), 'epub-underline-ai',
+          { stroke: AI_UNDERLINE_STROKE, 'stroke-width': '2px', 'stroke-opacity': '0.85' }
+        );
+      }
+    }
+  };
+
+  // 阅读打点：阅读器开着时每分钟上报一次；读满一定时长触发一次陪读划线
+  useEffect(() => {
+    if (!readerOpen || !currentBook) return;
+    sessionMinutesRef.current = 0;
+    companionDoneRef.current = false;
+
+    const timer = setInterval(() => {
+      sessionMinutesRef.current += 1;
+      apiFetch(`${API}/api/books/${currentBook.id}/reading-ping`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: new Date().toLocaleDateString('sv') }),
+      }).catch(() => {});
+
+      if (sessionMinutesRef.current >= COMPANION_READ_AFTER_MIN && !companionDoneRef.current) {
+        companionDoneRef.current = true;
+        runCompanionRead().catch(err => console.error('陪读划线失败:', err));
+      }
+    }, 60000);
+
+    return () => clearInterval(timer);
+  }, [readerOpen, currentBook?.id]);
+
+  // 点击有讨论的划线段落（或小克的批注），回看内容（继续输入会作为普通追问发给小克）
   const openHighlightRecall = (h) => {
-    if (!h || !h.has_discussion) return;
+    if (!h) return;
+    if (!h.has_discussion && h.author !== 'ai') return;
     const turns = [];
     if (h.user_thought) turns.push({ role: 'user', content: h.user_thought });
     if (h.ai_reply) turns.push({ role: 'assistant', content: h.ai_reply });
@@ -516,7 +646,13 @@ export default function ReadTab({ active, sessionId }) {
     if (!epubReady || !renditionRef.current) return;
     highlights.filter(h => h.format === 'epub' && h.cfi_range).forEach(h => {
       try {
-        if (h.has_discussion) {
+        if (h.author === 'ai') {
+          // 小克的笔迹：淡青下划线，点击看他的批注
+          renditionRef.current.annotations.add(
+            'underline', h.cfi_range, {}, () => openHighlightRecall(h), 'epub-underline-ai',
+            { stroke: AI_UNDERLINE_STROKE, 'stroke-width': '2px', 'stroke-opacity': '0.85' }
+          );
+        } else if (h.has_discussion) {
           renditionRef.current.annotations.add(
             'underline', h.cfi_range, {}, () => openHighlightRecall(h), 'epub-underline-discussed',
             { stroke: '#c98a98', 'stroke-width': '2px', 'stroke-opacity': '0.8' }
@@ -708,6 +844,7 @@ export default function ReadTab({ active, sessionId }) {
         color: h.color,
         id: h.id,
         discussed: h.has_discussion,
+        isAi: h.author === 'ai',
         h,
       }))
       .sort((a, b) => a.start - b.start);
@@ -731,12 +868,14 @@ export default function ReadTab({ active, sessionId }) {
           seg.hl ? (
             <mark
               key={si}
-              className={seg.hl.discussed ? 'txt-highlight txt-highlight-discussed' : 'txt-highlight'}
-              style={seg.hl.discussed
-                ? { backgroundColor: 'transparent', borderBottom: `2px solid ${seg.hl.color || '#c98a98'}` }
-                : { backgroundColor: seg.hl.color }}
+              className={(seg.hl.discussed || seg.hl.isAi) ? 'txt-highlight txt-highlight-discussed' : 'txt-highlight'}
+              style={seg.hl.isAi
+                ? { backgroundColor: seg.hl.color || AI_HIGHLIGHT_COLOR, borderBottom: `2px solid ${AI_UNDERLINE_STROKE}` }
+                : seg.hl.discussed
+                  ? { backgroundColor: 'transparent', borderBottom: `2px solid ${seg.hl.color || '#c98a98'}` }
+                  : { backgroundColor: seg.hl.color }}
               data-highlight-id={seg.hl.id}
-              onClick={seg.hl.discussed ? (e) => { e.stopPropagation(); openHighlightRecall(seg.hl.h); } : undefined}
+              onClick={(seg.hl.discussed || seg.hl.isAi) ? (e) => { e.stopPropagation(); openHighlightRecall(seg.hl.h); } : undefined}
             >
               {seg.text}
             </mark>
