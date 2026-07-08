@@ -547,7 +547,7 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
                           </svg>
                         )}
                       </button>
-                      {m.role === 'assistant' && (
+                      {m.role === 'assistant' && m.id > 0 && (
                         <button
                           className={`msg-action-btn${regeneratingId === m.id ? ' regenerating' : ''}`}
                           onClick={() => handleRegenerate(m.id)}

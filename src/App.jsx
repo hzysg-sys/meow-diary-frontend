@@ -76,6 +76,7 @@ function App() {
             show={activeTab === 'home'}
             onOpenChat={goChat}
             onOpenPlaceholder={goPlaceholder}
+            onOpenRead={() => setActiveTab('read')}
             onOpenMemory={goMemory}
           />
           <ChatListTab show={activeTab === 'chat'} />
