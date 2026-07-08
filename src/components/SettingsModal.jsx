@@ -3,11 +3,11 @@ import { CloseIcon } from './icons'
 import { fetchSettings, updateSettings } from '../api'
 
 const MODEL_OPTIONS = [
-  { label: '✦ Sonnet 4.5 (官转)', value: '[官转1] claude-sonnet-4-5' },
-  { label: 'Sonnet 4.6', value: '[按量6] claude-sonnet-4.6 [不补]' },
-  { label: 'Opus 4.5', value: '[按量6] claude-opus-4.5 [不补]' },
-  { label: 'Opus 4.6', value: '[按量6] claude-opus-4.6 [不补]' },
-  { label: 'Opus 4.8', value: '[按量6] claude-opus-4.8 [不补]' },
+  { label: 'o46', value: 'claude-opus-4-6-thinking' },
+  { label: 's46', value: 'claude-sonnet-4-6-thinking' },
+  { label: 'o45', value: 'claude-opus-4-5-20251101-thinking' },
+  { label: 's45', value: 'claude-sonnet-4-5-20250929-thinking' },
+  { label: 'fable5', value: 'claude-fable-5' },
 ]
 
 const THINKING_OPTIONS = [
