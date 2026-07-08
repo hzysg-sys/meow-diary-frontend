@@ -4,6 +4,7 @@ import Splash from './components/Splash'
 import Home from './components/Home'
 import PlaceholderView from './components/PlaceholderView'
 import MemoryPage from './components/MemoryPage'
+import EnergyPage from './components/EnergyPage'
 import Sidebar from './components/Sidebar'
 import SettingsModal from './components/SettingsModal'
 import ChatView from './components/ChatView'
@@ -21,6 +22,7 @@ const VIEW = {
   CHAT: 'chat',
   PLACEHOLDER: 'placeholder',
   MEMORY: 'memory',
+  ENERGY: 'energy',
 }
 
 function App() {
@@ -78,6 +80,7 @@ function App() {
             onOpenChat={goChat}
             onOpenPlaceholder={goPlaceholder}
             onOpenRead={() => setActiveTab('read')}
+            onOpenEnergy={() => setView(VIEW.ENERGY)}
             onOpenMemory={goMemory}
           />
           <ChatListTab show={activeTab === 'chat'} />
@@ -102,6 +105,8 @@ function App() {
       <PlaceholderView show={view === VIEW.PLACEHOLDER} title={placeholderTitle} onBack={() => goMain('home')} />
 
       <MemoryPage show={view === VIEW.MEMORY} onBack={() => goMain('home')} />
+
+      <EnergyPage show={view === VIEW.ENERGY} onBack={() => goMain('home')} />
 
       <div id="app" className={view === VIEW.CHAT ? 'show' : ''}>
         <Sidebar

@@ -1,5 +1,5 @@
 import { MEET_DATE } from '../constants'
-import { ChatCardIcon, MailboxIcon, TokenIcon, ReadingIcon, MomentsIcon, DocumentIcon } from './icons'
+import { ChatCardIcon, MailboxIcon, EnergyIcon, ReadingIcon, MomentsIcon, DocumentIcon } from './icons'
 
 function computeDayCount() {
   const now = new Date()
@@ -9,7 +9,7 @@ function computeDayCount() {
   return days > 0 ? days : 1
 }
 
-export default function Home({ show, onOpenChat, onOpenPlaceholder, onOpenRead, onOpenMemory }) {
+export default function Home({ show, onOpenChat, onOpenPlaceholder, onOpenRead, onOpenEnergy, onOpenMemory }) {
   const dayCount = computeDayCount()
 
   return (
@@ -39,11 +39,11 @@ export default function Home({ show, onOpenChat, onOpenPlaceholder, onOpenRead, 
       </div>
 
       <div className="home-grid">
-        <button className="home-card home-card-sm" onClick={() => onOpenPlaceholder('token')}>
+        <button className="home-card home-card-sm" onClick={onOpenEnergy}>
           <div className="home-card-icon">
-            <TokenIcon />
+            <EnergyIcon />
           </div>
-          <div className="home-card-label">token</div>
+          <div className="home-card-label">精力</div>
         </button>
         <button className="home-card home-card-sm" onClick={onOpenRead}>
           <div className="home-card-icon">

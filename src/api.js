@@ -188,6 +188,19 @@ export async function discussBookPassage(bookId, payload) {
   return data
 }
 
+export async function fetchEnergyState() {
+  const res = await apiFetch(`${API_BASE_URL}/api/energy`)
+  if (!res.ok) throw new Error(`加载精力状态失败 (${res.status})`)
+  return res.json()
+}
+
+export async function rerollEnergyState() {
+  const res = await apiFetch(`${API_BASE_URL}/api/energy/roll`, { method: 'POST' })
+  const data = await res.json().catch(() => null)
+  if (!res.ok) throw new Error(data?.error || `重掷失败 (${res.status})`)
+  return data
+}
+
 export async function editAndRegenerateMessage(id, newContent) {
   const res = await apiFetch(`${API_BASE_URL}/api/messages/${id}/edit-and-regenerate`, {
     method: 'POST',

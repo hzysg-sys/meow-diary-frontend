@@ -2281,3 +2281,98 @@
   cursor: pointer;
   padding: 4px;
 }
+
+/* ---- 精力页 ---- */
+#energy-page {
+  display: none;
+  height: 100vh;
+  height: 100dvh;
+  width: 100%;
+  overflow-y: auto;
+  background: #ffffff;
+}
+#energy-page.show {
+  display: block;
+}
+.energy-mode-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: #faf3f4;
+  border-radius: 18px;
+  padding: 18px 20px;
+  margin-bottom: 24px;
+}
+.energy-mode-emoji {
+  font-size: 32px;
+  line-height: 1;
+}
+.energy-mode-label {
+  font-size: 16px;
+  font-weight: 600;
+  color: #7d5a62;
+}
+.energy-mode-desc {
+  font-size: 12.5px;
+  color: #a8969a;
+  margin-top: 3px;
+}
+.energy-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-bottom: 26px;
+}
+.energy-stat-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+.energy-stat-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #57534e;
+}
+.energy-stat-value {
+  font-size: 12.5px;
+  color: #c98a98;
+  font-weight: 600;
+}
+.energy-stat-track {
+  height: 10px;
+  border-radius: 5px;
+  background: #f3eeee;
+  overflow: hidden;
+}
+.energy-stat-fill {
+  height: 100%;
+  border-radius: 5px;
+  background: linear-gradient(90deg, #e8c3cb, #c98a98);
+  transition: width 0.5s ease;
+}
+.energy-stat-desc {
+  font-size: 11.5px;
+  color: #b6aeae;
+  margin-top: 4px;
+}
+.energy-meta {
+  font-size: 12px;
+  color: #a8a29e;
+  line-height: 1.9;
+  margin-bottom: 20px;
+}
+.energy-roll-btn {
+  width: 100%;
+  border: none;
+  border-radius: 14px;
+  padding: 13px;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: #fff;
+  background: #c98a98;
+  cursor: pointer;
+}
+.energy-roll-btn:disabled {
+  opacity: 0.6;
+}
