@@ -2416,15 +2416,22 @@
   inset: 0;
   z-index: 20;
   overflow-y: auto;
-  /* 全屏背景图：固定铺满视口，内容在上面滚动；缺图回落粉调渐变 */
-  background: linear-gradient(150deg, #d4b5bc, #b6a2c0);
-  background-image: url('/backgrounds/moments-bg.jpg');
-  background-size: cover;
-  background-position: center;
-  background-attachment: fixed;
+  background: #f3e8ee;
 }
 #moments-page.show {
   display: block;
+}
+/* 固定全屏背景层：用 fixed 伪元素代替 background-attachment:fixed（移动端兼容性坑） */
+#moments-page::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: linear-gradient(150deg, #f3e3ea, #e8def0);
+  background-image: url('/backgrounds/moments-bg.jpg');
+  background-size: cover;
+  background-position: top center;
+  pointer-events: none;
 }
 .moments-cover {
   position: relative;
