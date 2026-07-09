@@ -213,6 +213,40 @@ export async function savePushSubscription(subscription) {
   return data
 }
 
+export async function fetchMoments(author) {
+  const qs = author ? `?author=${author}` : ''
+  const res = await apiFetch(`${API_BASE_URL}/api/moments${qs}`)
+  if (!res.ok) throw new Error(`加载朋友圈失败 (${res.status})`)
+  return res.json()
+}
+
+export async function postMoment({ content, imagesBase64 }) {
+  const res = await apiFetch(`${API_BASE_URL}/api/moments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content, images_base64: imagesBase64 || [] }),
+  })
+  const data = await res.json().catch(() => null)
+  if (!res.ok) throw new Error(data?.error || `发布失败 (${res.status})`)
+  return data
+}
+
+export async function deleteMoment(id) {
+  const res = await apiFetch(`${API_BASE_URL}/api/moments/${id}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`删除失败 (${res.status})`)
+}
+
+export async function postMomentComment(id, content) {
+  const res = await apiFetch(`${API_BASE_URL}/api/moments/${id}/comments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  })
+  const data = await res.json().catch(() => null)
+  if (!res.ok) throw new Error(data?.error || `评论失败 (${res.status})`)
+  return data
+}
+
 export async function fetchEnergyState() {
   const res = await apiFetch(`${API_BASE_URL}/api/energy`)
   if (!res.ok) throw new Error(`加载精力状态失败 (${res.status})`)

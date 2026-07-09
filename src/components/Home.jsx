@@ -9,7 +9,7 @@ function computeDayCount() {
   return days > 0 ? days : 1
 }
 
-export default function Home({ show, onOpenChat, onOpenPlaceholder, onOpenRead, onOpenEnergy, onOpenMemory }) {
+export default function Home({ show, onOpenChat, onOpenPlaceholder, onOpenRead, onOpenEnergy, onOpenMoments, onOpenMemory }) {
   const dayCount = computeDayCount()
 
   return (
@@ -51,7 +51,7 @@ export default function Home({ show, onOpenChat, onOpenPlaceholder, onOpenRead, 
           </div>
           <div className="home-card-label">阅读</div>
         </button>
-        <button className="home-card home-card-sm" onClick={() => onOpenPlaceholder('朋友圈')}>
+        <button className="home-card home-card-sm" onClick={onOpenMoments}>
           <div className="home-card-icon">
             <MomentsIcon />
           </div>
