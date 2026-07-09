@@ -2416,17 +2416,20 @@
   inset: 0;
   z-index: 20;
   overflow-y: auto;
-  background: #f4f4f5;
+  /* 全屏背景图：固定铺满视口，内容在上面滚动；缺图回落粉调渐变 */
+  background: linear-gradient(150deg, #d4b5bc, #b6a2c0);
+  background-image: url('/backgrounds/moments-bg.jpg');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
 }
 #moments-page.show {
   display: block;
 }
 .moments-cover {
   position: relative;
-  height: 240px;
-  /* 背景图缺失时回落到粉调渐变 */
-  background: linear-gradient(150deg, #d4b5bc, #b6a2c0) center / cover no-repeat;
-  background-image: url('/backgrounds/moments-bg.jpg');
+  height: 200px;
+  background: transparent;
 }
 .moments-back,
 .moments-camera {
@@ -2466,8 +2469,12 @@
 }
 .moments-body {
   padding: 44px 16px 60px;
-  background: #fff;
-  min-height: calc(100vh - 240px);
+  /* 半透明磨砂盖在全屏背景图上，保证文字可读又透出氛围 */
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 20px 20px 0 0;
+  min-height: calc(100vh - 200px);
 }
 .moments-hint {
   text-align: center;
