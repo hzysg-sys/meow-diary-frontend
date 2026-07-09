@@ -2428,8 +2428,9 @@
 }
 .moments-cover {
   position: relative;
-  height: 200px;
+  height: 150px;
   background: transparent;
+  z-index: 2;
 }
 .moments-back,
 .moments-camera {
@@ -2446,35 +2447,38 @@
 .moments-cover-id {
   position: absolute;
   right: 16px;
-  bottom: -30px;
+  bottom: -20px;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 12px;
+  z-index: 3;
 }
 .moments-cover-name {
-  color: #fff;
-  font-size: 17px;
+  color: #6b5560;
+  font-size: 16px;
   font-weight: 600;
-  margin-bottom: 42px;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  margin-bottom: 24px;
+  text-shadow: 0 1px 4px rgba(255, 255, 255, 0.7);
 }
 .moments-cover-avatar {
-  width: 68px;
-  height: 68px;
+  width: 62px;
+  height: 62px;
   border-radius: 12px;
   object-fit: cover;
   border: 3px solid #fff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
   cursor: pointer;
 }
 .moments-body {
-  padding: 44px 16px 60px;
+  position: relative;
+  z-index: 1;
+  padding: 34px 16px 60px;
   /* 半透明磨砂盖在全屏背景图上，保证文字可读又透出氛围 */
-  background: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-radius: 20px 20px 0 0;
-  min-height: calc(100vh - 200px);
+  min-height: calc(100vh - 150px);
 }
 .moments-hint {
   text-align: center;
