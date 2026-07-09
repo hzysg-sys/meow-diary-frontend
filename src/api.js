@@ -129,7 +129,11 @@ export async function sendChatMessage(sessionId, content, imageBase64 = null, im
       userMessageId: data.userMessageId,
     })
   }
-  return { reply: data.reply, reasoning_content: data.reasoning_content || null }
+  return {
+    reply: data.reply,
+    replies: Array.isArray(data.replies) && data.replies.length ? data.replies : [data.reply],
+    reasoning_content: data.reasoning_content || null,
+  }
 }
 
 export async function regenerateMessage(id) {

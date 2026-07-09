@@ -259,14 +259,26 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
     setIsSending(true)
 
     try {
-      const { reply, reasoning_content } = await sendChatMessage(
+      const { replies, reasoning_content } = await sendChatMessage(
         sessionId,
         text,
         imageToSend?.base64 || null,
         imageToSend?.type || null,
       )
-      pendingScrollRef.current = 'smooth'
-      setMessages((prev) => [...prev, { id: nextLocalId(), role: 'assistant', content: reply, reasoning_content: reasoning_content || null, time: formatTime() }])
+      // 分条逐一弹出：第一条立即，后续按内容长度模拟打字间隔（期间打字指示器持续显示）
+      for (let i = 0; i < replies.length; i++) {
+        if (i > 0) {
+          await new Promise((r) => setTimeout(r, Math.min(500 + replies[i].length * 55, 2400)))
+        }
+        pendingScrollRef.current = 'smooth'
+        setMessages((prev) => [...prev, {
+          id: nextLocalId(),
+          role: 'assistant',
+          content: replies[i],
+          reasoning_content: i === 0 ? (reasoning_content || null) : null,
+          time: formatTime(),
+        }])
+      }
     } catch (err) {
       if (err.code === 'empty_response' && err.userMessageId) {
         pendingScrollRef.current = 'smooth'
