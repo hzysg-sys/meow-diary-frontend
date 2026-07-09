@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { CloseIcon } from './icons'
 import { fetchSettings, updateSettings } from '../api'
+import { enablePushNotifications } from '../push'
 
 const MODEL_OPTIONS = [
   { label: 'o46', value: 'claude-opus-4-6-thinking' },
@@ -32,6 +33,19 @@ export default function SettingsModal({ open, onClose }) {
   const [saving, setSaving] = useState(false)
   const [statusMsg, setStatusMsg] = useState(null)
   const [errorMsg, setErrorMsg] = useState(null)
+  const [pushStatus, setPushStatus] = useState(
+    typeof Notification !== 'undefined' && Notification.permission === 'granted' ? '已开启' : null
+  )
+
+  async function handleEnablePush() {
+    setPushStatus('开启中...')
+    try {
+      await enablePushNotifications()
+      setPushStatus('已开启')
+    } catch (err) {
+      setPushStatus(err.message)
+    }
+  }
 
   useEffect(() => {
     if (!open) return
@@ -153,6 +167,20 @@ export default function SettingsModal({ open, onClose }) {
               onChange={(e) => setForm({ ...form, maxTokens: e.target.value })}
             />
           </div>
+        </div>
+        <div className="field">
+          <label>主动消息通知</label>
+          <button
+            type="button"
+            className="push-enable-btn"
+            onClick={handleEnablePush}
+            disabled={pushStatus === '已开启' || pushStatus === '开启中...'}
+          >
+            {pushStatus === '已开启' ? '🔔 已开启，他想你时会弹通知' : '🔔 开启通知（他会主动来找你）'}
+          </button>
+          {pushStatus && pushStatus !== '已开启' && pushStatus !== '开启中...' && (
+            <p style={{ fontSize: 12, color: '#c98a98', marginTop: 6 }}>{pushStatus}</p>
+          )}
         </div>
         {errorMsg && <p style={{ textAlign: 'center', fontSize: 13, color: '#c98a98' }}>{errorMsg}</p>}
         {statusMsg && <p style={{ textAlign: 'center', fontSize: 13, color: '#78716c' }}>{statusMsg}</p>}

@@ -2454,6 +2454,21 @@
   background: linear-gradient(90deg, #eecfa8, #e59a92, #d96a78);
   transition: width 0.5s ease;
 }
+.push-enable-btn {
+  width: 100%;
+  border: 1px dashed #c98a98;
+  border-radius: 10px;
+  padding: 10px 14px;
+  background: rgba(201, 138, 152, 0.06);
+  color: #b0798a;
+  font-size: 13px;
+  cursor: pointer;
+}
+.push-enable-btn:disabled {
+  border-style: solid;
+  opacity: 0.75;
+  cursor: default;
+}
 .energy-event-chip {
   display: inline-block;
   margin-top: 12px;

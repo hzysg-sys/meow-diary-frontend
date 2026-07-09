@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import './App.css'
 import Splash from './components/Splash'
 import Home from './components/Home'
@@ -15,6 +15,7 @@ import MailTab from './components/MailTab'
 // epub.js 体积大，阅读模块单独分包按需加载
 const ReadTab = lazy(() => import('./components/ReadTab'))
 import { fetchSessions, createSession } from './api'
+import { resubscribeIfGranted } from './push'
 
 const VIEW = {
   SPLASH: 'splash',
@@ -32,6 +33,11 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [currentSessionId, setCurrentSessionId] = useState(null)
+
+  // 已授权通知的设备静默续订推送
+  useEffect(() => {
+    resubscribeIfGranted()
+  }, [])
 
   function goMain(tab = 'home') {
     setActiveTab(tab)

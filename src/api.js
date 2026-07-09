@@ -196,6 +196,23 @@ export async function discussBookPassage(bookId, payload) {
   return data
 }
 
+export async function fetchVapidPublicKey() {
+  const res = await apiFetch(`${API_BASE_URL}/api/push/vapid-public-key`)
+  if (!res.ok) throw new Error(`获取推送密钥失败 (${res.status})`)
+  return res.json()
+}
+
+export async function savePushSubscription(subscription) {
+  const res = await apiFetch(`${API_BASE_URL}/api/push/subscribe`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subscription }),
+  })
+  const data = await res.json().catch(() => null)
+  if (!res.ok) throw new Error(data?.error || `保存订阅失败 (${res.status})`)
+  return data
+}
+
 export async function fetchEnergyState() {
   const res = await apiFetch(`${API_BASE_URL}/api/energy`)
   if (!res.ok) throw new Error(`加载精力状态失败 (${res.status})`)
