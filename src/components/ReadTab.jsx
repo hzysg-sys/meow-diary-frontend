@@ -106,6 +106,9 @@ export default function ReadTab({ active, sessionId }) {
   const fileInputRef = useRef(null);
   const sessionMinutesRef = useRef(0);
   const companionDoneRef = useRef(false);
+  // 打点定时器建得早（txt 正文还没加载），闭包会锁死旧状态；
+  // 每次渲染把最新的 runCompanionRead 写进 ref，定时器永远调最新版
+  const runCompanionReadRef = useRef(null);
 
   useEffect(() => {
     activeSelectionRef.current = activeSelection;
@@ -603,6 +606,7 @@ export default function ReadTab({ active, sessionId }) {
       }
     }
   };
+  runCompanionReadRef.current = runCompanionRead;
 
   // 阅读打点：阅读器开着时每分钟上报一次；读满一定时长触发一次陪读划线
   useEffect(() => {
@@ -620,7 +624,7 @@ export default function ReadTab({ active, sessionId }) {
 
       if (sessionMinutesRef.current >= COMPANION_READ_AFTER_MIN && !companionDoneRef.current) {
         companionDoneRef.current = true;
-        runCompanionRead().catch(err => console.error('陪读划线失败:', err));
+        runCompanionReadRef.current?.().catch(err => console.error('陪读划线失败:', err));
       }
     }, 60000);
 
