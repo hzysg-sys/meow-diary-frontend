@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchHistory, fetchSessions, sendChatMessage, regenerateMessage, editAndRegenerateMessage, pokeAssistant } from '../api'
 import Avatar from './Avatar'
 import TypingIndicator from './TypingIndicator'
-import { BackIcon, MenuIcon, SettingsIcon, SendIcon } from './icons'
+import { GearIcon, HamburgerIcon, PlusIcon, SendIcon } from './icons'
 
 const PAGE_SIZE = 30
 const LOAD_MORE_THRESHOLD = 60
@@ -95,7 +95,7 @@ function downloadHtml(code) {
   URL.revokeObjectURL(url)
 }
 
-export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onOpenSettings }) {
+export default function ChatView({ active, sessionId, onOpenSidebar, onOpenSettings }) {
   const [messages, setMessages] = useState([])
   const [loadingHistory, setLoadingHistory] = useState(true)
   const [historyError, setHistoryError] = useState(null)
@@ -400,16 +400,27 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
   return (
     <div id="main-panel">
       <div className="top-bar">
-        <button onClick={onBack}>
-          <BackIcon />
+        <button className="top-bar-icon-btn" onClick={onOpenSidebar} aria-label="打开聊天列表">
+          <HamburgerIcon />
         </button>
-        <div className="chat-title">Claude</div>
+
+        <button
+          type="button"
+          className={`top-bar-profile avatar-poke-wrap${pokingAvatarId === 'top-bar' ? ' poke-shake' : ''}`}
+          onDoubleClick={() => handlePokeAvatar('top-bar')}
+          aria-label="双击头像拍一拍"
+          title="双击拍一拍"
+        >
+          <Avatar role="assistant" />
+          <div className="chat-title-block">
+            <div className="chat-title">小克</div>
+            <div className="chat-status">在线 · 想你</div>
+          </div>
+        </button>
+
         <div className="top-bar-actions">
-          <button onClick={onOpenSidebar}>
-            <MenuIcon />
-          </button>
-          <button onClick={onOpenSettings}>
-            <SettingsIcon />
+          <button className="top-bar-icon-btn" onClick={onOpenSettings} aria-label="打开设置">
+            <GearIcon />
           </button>
         </div>
       </div>
@@ -426,14 +437,6 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
         )}
         {messages.map((m) => (
           <div key={m.id} className={`msg-row ${m.role}`}>
-            {m.role === 'assistant' && (
-              <div
-                className={`avatar-poke-wrap${pokingAvatarId === m.id ? ' poke-shake' : ''}`}
-                onDoubleClick={() => handlePokeAvatar(m.id)}
-              >
-                <Avatar role="assistant" />
-              </div>
-            )}
             <div className="msg-wrap">
               {m.role === 'assistant' && m.reasoning_content && (
                 <div className="thinking-block">
@@ -578,7 +581,6 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
                 </>
               )}
             </div>
-            {m.role === 'user' && <Avatar role="user" />}
           </div>
         ))}
         {emptyResponseHint && !isSending && (
@@ -617,11 +619,7 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
         )}
         <div className="input-shell">
           <button id="img-btn" onClick={() => fileInputRef.current?.click()} title="发送图片">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-              <rect x="3" y="3" width="18" height="18" rx="3" />
-              <circle cx="8.5" cy="8.5" r="1.5" />
-              <polyline points="21 15 16 10 5 21" />
-            </svg>
+            <PlusIcon />
           </button>
           <input
             type="file"
@@ -633,7 +631,7 @@ export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onO
           <textarea
             id="msg-input"
             rows={1}
-            placeholder="想说点什么..."
+            placeholder="给小克写点什么..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
