@@ -50,15 +50,17 @@ export default function TabBar({ activeTab, onTabChange }) {
       {TABS.map((tab) => (
         <button
           key={tab.key}
-          className={`tab-item${activeTab === tab.key ? ' active' : ''}`}
+          className={`tab-item${activeTab === tab.key ? ' active' : ''}${tab.key === 'home' ? ' tab-home' : ''}`}
           onClick={() => onTabChange(tab.key)}
+          aria-label={tab.label}
+          aria-current={activeTab === tab.key ? 'page' : undefined}
         >
           {tab.key === 'home' ? (
-            <div className="cat-paw-icon" />
+            <div className="cat-dock-btn"><div className="cat-paw-icon" /></div>
           ) : (
             tab.icon
           )}
-          <span className="tab-label">{tab.label}</span>
+          {tab.key !== 'home' && <span className="tab-label">{tab.label}</span>}
         </button>
       ))}
     </div>
