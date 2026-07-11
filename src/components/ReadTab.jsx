@@ -445,6 +445,51 @@ export default function ReadTab({ active, sessionId }) {
       contents.document.addEventListener('scroll', resetInnerScroll, { capture: true, passive: true });
       contents.window.addEventListener('scroll', resetInnerScroll, { passive: true });
 
+      // 这本书存在横跨很多分页的超长段落。Android 拖动原生选区时会连续
+      // auto-scroll，单靠 scroll 事件回拉偶尔赶不上绘制；选区存续期间逐帧锁位。
+      let scrollLock = null;
+      let scrollLockFrame = 0;
+      let releaseLockTimer = 0;
+      const applyScrollLock = () => {
+        if (!scrollLock) return;
+        const de = contents.document.documentElement;
+        const body = contents.document.body;
+        if (de) { de.scrollLeft = scrollLock.deLeft; de.scrollTop = scrollLock.deTop; }
+        if (body) { body.scrollLeft = scrollLock.bodyLeft; body.scrollTop = scrollLock.bodyTop; }
+        if (epubContainer) {
+          epubContainer.scrollLeft = scrollLock.containerLeft;
+          epubContainer.scrollTop = scrollLock.containerTop;
+        }
+        scrollLockFrame = contents.window.requestAnimationFrame(applyScrollLock);
+      };
+      const startScrollLock = () => {
+        contents.window.clearTimeout(releaseLockTimer);
+        const de = contents.document.documentElement;
+        const body = contents.document.body;
+        scrollLock = {
+          deLeft: de?.scrollLeft || 0,
+          deTop: de?.scrollTop || 0,
+          bodyLeft: body?.scrollLeft || 0,
+          bodyTop: body?.scrollTop || 0,
+          containerLeft: epubContainer?.scrollLeft || 0,
+          containerTop: epubContainer?.scrollTop || 0,
+        };
+        if (!scrollLockFrame) applyScrollLock();
+      };
+      const stopScrollLock = () => {
+        contents.window.clearTimeout(releaseLockTimer);
+        scrollLock = null;
+        if (scrollLockFrame) contents.window.cancelAnimationFrame(scrollLockFrame);
+        scrollLockFrame = 0;
+      };
+      const stopLockIfNoSelection = () => {
+        contents.window.clearTimeout(releaseLockTimer);
+        releaseLockTimer = contents.window.setTimeout(() => {
+          const sel = contents.window.getSelection();
+          if (!sel || !sel.toString().trim()) stopScrollLock();
+        }, 500);
+      };
+
       // 触摸翻页和浏览器合成 click 分开处理。长按选词永远不能进入翻页逻辑。
       let pointerDownTs = 0;
       let suppressClickUntil = 0;
@@ -470,6 +515,7 @@ export default function ReadTab({ active, sessionId }) {
       };
       contents.document.addEventListener('touchstart', (e) => {
         markPointerDown();
+        startScrollLock();
         lastTouchTs = Date.now();
         const t = e.touches[0];
         touchGesture = t ? { started: Date.now(), x: t.clientX, y: t.clientY } : null;
@@ -481,10 +527,11 @@ export default function ReadTab({ active, sessionId }) {
         const start = touchGesture;
         touchGesture = null;
         const t = e.changedTouches[0];
-        if (!start || !t || Date.now() - start.started > 250) return;
-        if (Math.hypot(t.clientX - start.x, t.clientY - start.y) > 12) return;
+        if (!start || !t || Date.now() - start.started > 250) { stopLockIfNoSelection(); return; }
+        if (Math.hypot(t.clientX - start.x, t.clientY - start.y) > 12) { stopLockIfNoSelection(); return; }
         const sel = contents.window.getSelection();
         if (sel && sel.toString().trim()) return;
+        stopScrollLock();
         navigateAt(t.clientX);
       }, { capture: true, passive: true });
       contents.document.addEventListener('contextmenu', () => {
@@ -495,6 +542,8 @@ export default function ReadTab({ active, sessionId }) {
         const s = contents.window.getSelection();
         if (s && s.toString().trim()) {
           suppressClickUntil = Date.now() + 1000;
+        } else {
+          stopLockIfNoSelection();
         }
       });
 
@@ -518,6 +567,7 @@ export default function ReadTab({ active, sessionId }) {
           const sel = contents.window.getSelection();
           const text = sel.toString().trim();
           if (!text || !sel.rangeCount) {
+            stopScrollLock();
             setActiveSelection(null);
             return;
           }
