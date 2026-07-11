@@ -29,7 +29,7 @@ export default function Home({ show, onOpenChat, onOpenPlaceholder, onOpenRead, 
           <div className="home-card-icon"><ChatCardIcon /></div>
           <div>
             <div className="home-card-label">聊天</div>
-            <div className="home-card-sub">和小克说说话</div>
+            <div className="home-card-sub">和 Elias 说说话</div>
           </div>
         </button>
         <button className="home-card home-card-lg" onClick={() => onOpenPlaceholder('信箱')}>

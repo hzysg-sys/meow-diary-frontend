@@ -53,10 +53,10 @@ const PRESET_BGS = [
 
 const HIGHLIGHT_COLORS = ['#faeef0', '#f3dde1', '#ecd4da', '#f2e8e2'];
 
-// 小克的笔迹色（淡青蓝，与用户的胭脂粉区分）
+// Elias 的笔迹色（淡青蓝，与用户的胭脂粉区分）
 const AI_HIGHLIGHT_COLOR = '#dce7f2';
 const AI_UNDERLINE_STROKE = '#8fa8c8';
-// 连续阅读满这么多分钟后，触发一次小克陪读划线（每次打开书最多一次）
+// 连续阅读满这么多分钟后，触发一次 Elias 陪读划线（每次打开书最多一次）
 const COMPANION_READ_AFTER_MIN = 10;
 
 export default function ReadTab({ active, sessionId }) {
@@ -509,7 +509,7 @@ export default function ReadTab({ active, sessionId }) {
     };
   }, [readerOpen, currentBook?.id]);
 
-  // ---- 陪读系统：阅读打点 + 小克自己的划线批注（双色笔迹） ----
+  // ---- 陪读系统：阅读打点 + Elias 自己的划线批注（双色笔迹） ----
 
   // 取她正在读的文本片段（txt 按滚动位置截取，epub 取当前章节可见内容）
   const getReadingExcerpt = () => {
@@ -631,7 +631,7 @@ export default function ReadTab({ active, sessionId }) {
     return () => clearInterval(timer);
   }, [readerOpen, currentBook?.id]);
 
-  // 点击有讨论的划线段落（或小克的批注），回看内容（继续输入会作为普通追问发给小克）
+  // 点击有讨论的划线段落（或 Elias 的批注），回看内容（继续输入会作为普通追问发给 Elias）
   const openHighlightRecall = (h) => {
     if (!h) return;
     if (!h.has_discussion && h.author !== 'ai') return;
@@ -651,7 +651,7 @@ export default function ReadTab({ active, sessionId }) {
     highlights.filter(h => h.format === 'epub' && h.cfi_range).forEach(h => {
       try {
         if (h.author === 'ai') {
-          // 小克的笔迹：淡青下划线，点击看他的批注
+          // Elias 的笔迹：淡青下划线，点击看他的批注
           renditionRef.current.annotations.add(
             'underline', h.cfi_range, {}, () => openHighlightRecall(h), 'epub-underline-ai',
             { stroke: AI_UNDERLINE_STROKE, 'stroke-width': '2px', 'stroke-opacity': '0.85' }
@@ -954,7 +954,7 @@ export default function ReadTab({ active, sessionId }) {
       }
       setDiscussTurns(prev => [...prev, { role: 'assistant', content: reply }]);
     } catch (err) {
-      setDiscussTurns(prev => [...prev, { role: 'assistant', content: '小克走神了，再试一次吧' }]);
+      setDiscussTurns(prev => [...prev, { role: 'assistant', content: 'Elias 走神了，再试一次吧' }]);
     } finally {
       setDiscussLoading(false);
     }
@@ -1197,7 +1197,7 @@ export default function ReadTab({ active, sessionId }) {
                 <button className="discuss-expand-btn" onClick={() => setDiscussFull(prev => !prev)}>
                   {discussFull ? '⌄' : '⌃'}
                 </button>
-                <span className="discuss-panel-title">和小克聊聊这段</span>
+                <span className="discuss-panel-title">和 Elias 聊聊这段</span>
                 <button className="discuss-close-btn" onClick={closeDiscuss}>✕</button>
               </div>
               <div className="discuss-passage-quote">「{discussPassage?.text}」</div>

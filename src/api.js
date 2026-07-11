@@ -100,7 +100,7 @@ export async function deleteMemory(id) {
   }
 }
 
-// 用户设备本地时间字符串（发消息时捎给后端，给小克做时间感知）
+// 用户设备本地时间字符串（发消息时捎给后端，给 Elias 做时间感知）
 function clientTimeString() {
   return new Date().toLocaleString('zh-CN', {
     month: 'long', day: 'numeric', weekday: 'long',

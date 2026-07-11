@@ -634,15 +634,15 @@
   min-width: 0;
   overflow: hidden;
   background-color: #fbf0f3;
-  background-image: url('/backgrounds/chat-bg.png');
+  background-image: url('/backgrounds/chat-bg.jpg');
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
 }
 .top-bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) 34px;
   align-items: center;
-  justify-content: space-between;
   flex-shrink: 0;
   margin: calc(18px + env(safe-area-inset-top)) 16px 0;
   border-radius: 999px;
@@ -655,6 +655,12 @@
   border: 1px solid rgba(255, 255, 255, 0.78);
   box-shadow: 0 8px 24px rgba(164, 128, 143, 0.16);
   z-index: 5;
+}
+.top-bar-start {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
 }
 .top-bar-icon-btn,
 .top-bar button {
@@ -675,6 +681,7 @@
 .top-bar-profile {
   align-items: center;
   justify-content: center;
+  justify-self: center;
   gap: 9px;
   min-width: 0;
   cursor: pointer;
@@ -794,7 +801,7 @@
   box-shadow: 0 4px 14px rgba(164, 128, 143, 0.12);
 }
 .msg-row.user .bubble {
-  background: rgba(244, 211, 224, 0.58);
+  background: rgba(250, 229, 237, 0.56);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.65);
@@ -1011,18 +1018,20 @@
 }
 .input-shell {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 8px;
   background: rgba(255, 255, 255, 0.76);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   border: 1px solid rgba(255, 255, 255, 0.78);
   border-radius: 999px;
-  padding: 10px 14px;
+  min-height: 56px;
+  padding: 6px 12px 6px 14px;
   box-shadow: 0 8px 24px rgba(164, 128, 143, 0.14);
 }
 #msg-input {
   flex: 1;
+  min-width: 0;
   border: none;
   outline: none;
   resize: none;
@@ -1031,6 +1040,10 @@
   background: transparent;
   max-height: 96px;
   font-family: inherit;
+  line-height: 20px;
+  height: 20px;
+  padding: 0;
+  overflow: hidden;
 }
 #send-btn {
   width: 42px;
@@ -1041,7 +1054,7 @@
   color: #fff;
   cursor: pointer;
   padding: 0;
-  margin: -4px -8px -4px 0;
+  margin: 0 -6px 0 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1063,9 +1076,12 @@
   border: none;
   color: #c7a9b4;
   cursor: pointer;
-  padding: 4px;
+  padding: 0;
   display: flex;
   align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
   flex-shrink: 0;
 }
 #img-btn:hover {

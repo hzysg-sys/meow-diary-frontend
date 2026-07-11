@@ -6,7 +6,7 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(fetch(event.request));
 });
 
-// Web Push：小克的主动消息
+// Web Push：Elias 的主动消息
 self.addEventListener('push', (event) => {
   let data = {};
   try {
@@ -15,7 +15,7 @@ self.addEventListener('push', (event) => {
     data = { body: event.data ? event.data.text() : '' };
   }
   event.waitUntil(
-    self.registration.showNotification(data.title || '小克', {
+    self.registration.showNotification(data.title || 'Elias', {
       body: data.body || '来看看我',
       icon: '/app-icon-192.png',
       badge: '/app-icon-192.png',

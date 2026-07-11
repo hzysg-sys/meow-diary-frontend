@@ -17,7 +17,7 @@ function relTime(iso) {
   return new Date(iso).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
 }
 
-const nameOf = (author) => (author === 'ai' ? '小克' : '我')
+const nameOf = (author) => (author === 'ai' ? 'Elias' : '我')
 const avatarOf = (author) => (author === 'ai' ? AI_AVATAR_URL : USER_AVATAR_URL)
 
 export default function MomentsPage({ show, onBack }) {

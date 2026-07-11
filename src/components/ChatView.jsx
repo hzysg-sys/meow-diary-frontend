@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchHistory, fetchSessions, sendChatMessage, regenerateMessage, editAndRegenerateMessage, pokeAssistant } from '../api'
 import Avatar from './Avatar'
 import TypingIndicator from './TypingIndicator'
-import { GearIcon, HamburgerIcon, PlusIcon, SendIcon } from './icons'
+import { BackIcon, GearIcon, HamburgerIcon, PlusIcon, SendIcon } from './icons'
 
 const PAGE_SIZE = 30
 const LOAD_MORE_THRESHOLD = 60
@@ -95,7 +95,7 @@ function downloadHtml(code) {
   URL.revokeObjectURL(url)
 }
 
-export default function ChatView({ active, sessionId, onOpenSidebar, onOpenSettings }) {
+export default function ChatView({ active, sessionId, onBack, onOpenSidebar, onOpenSettings }) {
   const [messages, setMessages] = useState([])
   const [loadingHistory, setLoadingHistory] = useState(true)
   const [historyError, setHistoryError] = useState(null)
@@ -400,9 +400,14 @@ export default function ChatView({ active, sessionId, onOpenSidebar, onOpenSetti
   return (
     <div id="main-panel">
       <div className="top-bar">
-        <button className="top-bar-icon-btn" onClick={onOpenSidebar} aria-label="打开聊天列表">
-          <HamburgerIcon />
-        </button>
+        <div className="top-bar-start">
+          <button className="top-bar-icon-btn" onClick={onBack} aria-label="返回首页">
+            <BackIcon />
+          </button>
+          <button className="top-bar-icon-btn" onClick={onOpenSidebar} aria-label="打开聊天列表">
+            <HamburgerIcon />
+          </button>
+        </div>
 
         <button
           type="button"
@@ -413,7 +418,7 @@ export default function ChatView({ active, sessionId, onOpenSidebar, onOpenSetti
         >
           <Avatar role="assistant" />
           <div className="chat-title-block">
-            <div className="chat-title">小克</div>
+            <div className="chat-title">Elias</div>
             <div className="chat-status">在线 · 想你</div>
           </div>
         </button>
@@ -585,7 +590,7 @@ export default function ChatView({ active, sessionId, onOpenSidebar, onOpenSetti
         ))}
         {emptyResponseHint && !isSending && (
           <div className="empty-response-hint">
-            <span>小克走神了，再试一次吧</span>
+            <span>Elias 走神了，再试一次吧</span>
             <button
               className={`empty-response-retry-btn${emptyResponseRetrying ? ' retrying' : ''}`}
               onClick={handleEmptyResponseRetry}
@@ -631,7 +636,7 @@ export default function ChatView({ active, sessionId, onOpenSidebar, onOpenSetti
           <textarea
             id="msg-input"
             rows={1}
-            placeholder="给小克写点什么..."
+            placeholder="꒰১⁺₊⋆ 𝓐𝓷𝓰𝓮𝓵 𝓕𝓪𝓷𝓽𝓪𝓼𝔂 ⋆⁺₊ ໒꒱"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
