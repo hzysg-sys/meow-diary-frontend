@@ -8,6 +8,8 @@ import Mapping from 'epubjs/src/mapping';
 // 补丁：按空格切分之外，超过 15 字的连续文本强制按 15 字一块再切，
 // 让位置精度从"一整段"提高到"15 字以内"
 const WORD_CHUNK = 15;
+const SELECTION_CHUNK = 80;
+const SELECTION_CHUNK_CLASS = 'epub-selection-chunk';
 const origSplitTextNode = Mapping.prototype.splitTextNodeIntoRanges;
 Mapping.prototype.splitTextNodeIntoRanges = function (node, _splitter) {
   if (node.nodeType !== Node.TEXT_NODE) return origSplitTextNode.call(this, node, _splitter);
@@ -25,6 +27,17 @@ Mapping.prototype.splitTextNodeIntoRanges = function (node, _splitter) {
   }
   push(segStart, text.length);
   return ranges.length ? ranges : origSplitTextNode.call(this, node, _splitter);
+};
+// 运行时插入的选区分段不应改变书签、划线和当前页的 CFI。
+Mapping.prototype.rangePairToCfiPair = function (cfiBase, rangePair) {
+  const startRange = rangePair.start;
+  const endRange = rangePair.end;
+  startRange.collapse(true);
+  endRange.collapse(false);
+  return {
+    start: new EpubCFI(startRange, cfiBase, SELECTION_CHUNK_CLASS).toString(),
+    end: new EpubCFI(endRange, cfiBase, SELECTION_CHUNK_CLASS).toString(),
+  };
 };
 import Avatar from './Avatar';
 import TypingIndicator from './TypingIndicator';
@@ -408,6 +421,7 @@ export default function ReadTab({ active, sessionId }) {
       height: '100%',
       spread: 'none',
       flow: 'paginated',
+      ignoreClass: SELECTION_CHUNK_CLASS,
     });
     renditionRef.current = rendition;
 
@@ -430,6 +444,34 @@ export default function ReadTab({ active, sessionId }) {
     });
 
     rendition.hooks.content.register((contents) => {
+      // 中文 EPUB 常把数千字放在同一个文本节点里。Android 原生选区会把这个
+      // 巨大节点的开头当作锚点，导致任何一页选字都滚回段落（甚至章节）第一页。
+      // 用可忽略的 inline span 切成小段：视觉不变，选区锚点只覆盖当前几行。
+      const doc = contents.document;
+      const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+      const longTextNodes = [];
+      let textNode;
+      while ((textNode = walker.nextNode())) {
+        const parentTag = textNode.parentElement?.tagName;
+        if (textNode.data.length > SELECTION_CHUNK && parentTag !== 'SCRIPT' && parentTag !== 'STYLE') {
+          longTextNodes.push(textNode);
+        }
+      }
+      longTextNodes.forEach((node) => {
+        const fragment = doc.createDocumentFragment();
+        for (let i = 0; i < node.data.length; i += SELECTION_CHUNK) {
+          const span = doc.createElement('span');
+          span.className = SELECTION_CHUNK_CLASS;
+          span.textContent = node.data.slice(i, i + SELECTION_CHUNK);
+          fragment.appendChild(span);
+        }
+        node.parentNode?.replaceChild(fragment, node);
+      });
+
+      // annotations 内部调用 contents.range(cfi) 时也使用同一忽略类，兼容旧划线。
+      const originalRange = contents.range.bind(contents);
+      contents.range = (cfi, ignoreClass = SELECTION_CHUNK_CLASS) => originalRange(cfi, ignoreClass);
+
       // 拖选到页面边缘时，浏览器原生 auto-scroll 会把 iframe 内文档滚出
       // epub.js 的分栏对齐位置——眼睛看到的内容从此比 epub.js 内部记录的
       // 位置靠后一到几屏，书签/页码/划线全跟着偏早，布局也出现半列错位。
@@ -572,7 +614,7 @@ export default function ReadTab({ active, sessionId }) {
             return;
           }
           epubSelectionContentsRef.current = contents;
-          const cfiRange = contents.cfiFromRange(sel.getRangeAt(0));
+          const cfiRange = contents.cfiFromRange(sel.getRangeAt(0), SELECTION_CHUNK_CLASS);
           const rect = sel.getRangeAt(0).getBoundingClientRect();
           const iframeRect = contents.window.frameElement.getBoundingClientRect();
           setActiveSelection({ text, format: 'epub', cfiRange, anchorX: iframeRect.left + rect.left + rect.width / 2, anchorY: iframeRect.top + rect.bottom });

@@ -3105,7 +3105,7 @@
 }
 
 .reader-header {
-  margin: 0 16px;
+  margin: 46px 16px 0;
   padding: 8px 14px;
   border-bottom: none;
   background: rgba(255, 255, 255, 0.6);
@@ -3132,7 +3132,7 @@
 }
 
 .reader-footer {
-  padding: 8px 24px 12px;
+  padding: 12px 24px 24px;
   background: transparent;
   border-top: none;
   color: #b0a08c;
