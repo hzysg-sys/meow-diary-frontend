@@ -445,6 +445,8 @@ export default function ReadTab({ active, sessionId }) {
           deTop: de?.scrollTop || 0,
           bodyLeft: body?.scrollLeft || 0,
           bodyTop: body?.scrollTop || 0,
+          containerLeft: epubContainer?.scrollLeft || 0,
+          containerTop: epubContainer?.scrollTop || 0,
         };
       };
       const restoreInnerScroll = () => {
@@ -453,9 +455,14 @@ export default function ReadTab({ active, sessionId }) {
         const body = contents.document.body;
         if (de) { de.scrollLeft = selectionScroll.deLeft; de.scrollTop = selectionScroll.deTop; }
         if (body) { body.scrollLeft = selectionScroll.bodyLeft; body.scrollTop = selectionScroll.bodyTop; }
+        if (epubContainer) {
+          epubContainer.scrollLeft = selectionScroll.containerLeft;
+          epubContainer.scrollTop = selectionScroll.containerTop;
+        }
       };
       contents.document.addEventListener('scroll', restoreInnerScroll, { capture: true, passive: true });
       contents.window.addEventListener('scroll', restoreInnerScroll, { passive: true });
+      epubContainer?.addEventListener('scroll', restoreInnerScroll, { passive: true });
 
       // 手机长按会在 selectionchange 之前补发 click。只记录选区时间会漏掉这一下，
       // 所以从按下开始计时：按住超过 350ms 的手势绝不当成翻页点击。
