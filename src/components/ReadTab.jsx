@@ -430,6 +430,22 @@ export default function ReadTab({ active, sessionId }) {
     const epubContainer = viewerRef.current.querySelector('.epub-container');
     if (epubContainer) epubContainer.style.overflow = 'hidden';
 
+    // 拖原生选区手柄跨页缘时收不到任何 touch 事件（手柄是系统 UI），iframe 内的
+    // scrollLock 罩不住——浏览器会转而滚动 iframe 外层祖先（阅读器容器/主滚动区），
+    // 外层一歪整页布局就错位。这条链路本应永远停在 0：捕获阶段一滚就钉回去。
+    // epubContainer 除外（它的 scrollLeft 是 epub.js 的翻页位置，由 scrollLock 管）
+    const pinOuterAncestors = () => {
+      let el = viewerRef.current;
+      while (el && el !== document.body) {
+        if (el !== epubContainer) {
+          if (el.scrollLeft) el.scrollLeft = 0;
+          if (el.scrollTop) el.scrollTop = 0;
+        }
+        el = el.parentElement;
+      }
+    };
+    document.addEventListener('scroll', pinOuterAncestors, { capture: true, passive: true });
+
     rendition.themes.default({
       body: {
         'background': bgValue,
@@ -652,6 +668,7 @@ export default function ReadTab({ active, sessionId }) {
 
 
     return () => {
+      document.removeEventListener('scroll', pinOuterAncestors, { capture: true });
       if (renditionRef.current) renditionRef.current.destroy();
       if (epubRef.current) epubRef.current.destroy();
       renditionRef.current = null;
