@@ -436,42 +436,14 @@ export default function ReadTab({ active, sessionId }) {
       // 之前"松手后重新锚定"在手机拖选区手柄时经常收不到 touchend，修不干净。
       // 改为彻底禁止内部滚动：一滚就立刻拉回 0，画面永远和内部位置对齐。
       // 代价：选区拖到页边缘不再自动翻页，一次只能选当前页内的文字
-      let selectionScroll = null;
-      const rememberInnerScroll = () => {
-        const de = contents.document.documentElement;
-        const body = contents.document.body;
-        selectionScroll = {
-          deLeft: de?.scrollLeft || 0,
-          deTop: de?.scrollTop || 0,
-          bodyLeft: body?.scrollLeft || 0,
-          bodyTop: body?.scrollTop || 0,
-          containerLeft: epubContainer?.scrollLeft || 0,
-          containerTop: epubContainer?.scrollTop || 0,
-        };
-      };
-      const restoreInnerScroll = () => {
-        if (!selectionScroll) return;
-        const de = contents.document.documentElement;
-        const body = contents.document.body;
-        if (de) { de.scrollLeft = selectionScroll.deLeft; de.scrollTop = selectionScroll.deTop; }
-        if (body) { body.scrollLeft = selectionScroll.bodyLeft; body.scrollTop = selectionScroll.bodyTop; }
-        if (epubContainer) {
-          epubContainer.scrollLeft = selectionScroll.containerLeft;
-          epubContainer.scrollTop = selectionScroll.containerTop;
-        }
-      };
-      contents.document.addEventListener('scroll', restoreInnerScroll, { capture: true, passive: true });
-      contents.window.addEventListener('scroll', restoreInnerScroll, { passive: true });
-      epubContainer?.addEventListener('scroll', restoreInnerScroll, { passive: true });
-
       // 手机长按会在 selectionchange 之前补发 click。只记录选区时间会漏掉这一下，
       // 所以从按下开始计时：按住超过 350ms 的手势绝不当成翻页点击。
       let pointerDownTs = 0;
       let suppressClickUntil = 0;
+      let selectionStartCfi = null;
       const markPointerDown = () => {
         pointerDownTs = Date.now();
-        // 不能锁到 0：epub.js 用横向滚动值表示当前分页，归零会回到本章第一页。
-        rememberInnerScroll();
+        selectionStartCfi = rendition.currentLocation()?.start?.cfi || lastLocationRef.current;
       };
       const markPointerUp = () => {
         if (pointerDownTs && Date.now() - pointerDownTs >= 350) {
@@ -490,9 +462,6 @@ export default function ReadTab({ active, sessionId }) {
         const s = contents.window.getSelection();
         if (s && s.toString().trim()) {
           suppressClickUntil = Date.now() + 1000;
-          // 锁回长按开始时的分页位置，而不是锁到本章第一页。
-          restoreInnerScroll();
-          contents.window.requestAnimationFrame(restoreInnerScroll);
         }
       });
 
@@ -505,7 +474,6 @@ export default function ReadTab({ active, sessionId }) {
         if (pressDuration >= 350 || Date.now() < suppressClickUntil) return;
         const sel = contents.window.getSelection();
         if (sel && sel.toString().trim()) return;
-        selectionScroll = null;
         const frameRect = contents.window.frameElement.getBoundingClientRect();
         const x = frameRect.left + e.clientX;
         const w = window.innerWidth;
@@ -521,7 +489,6 @@ export default function ReadTab({ active, sessionId }) {
           const sel = contents.window.getSelection();
           const text = sel.toString().trim();
           if (!text || !sel.rangeCount) {
-            selectionScroll = null;
             setActiveSelection(null);
             return;
           }
@@ -529,7 +496,22 @@ export default function ReadTab({ active, sessionId }) {
           const cfiRange = contents.cfiFromRange(sel.getRangeAt(0));
           const rect = sel.getRangeAt(0).getBoundingClientRect();
           const iframeRect = contents.window.frameElement.getBoundingClientRect();
-          setActiveSelection({ text, format: 'epub', cfiRange, anchorX: iframeRect.left + rect.left + rect.width / 2, anchorY: iframeRect.top + rect.bottom });
+          const selectionData = { text, format: 'epub', cfiRange, anchorX: iframeRect.left + rect.left + rect.width / 2, anchorY: iframeRect.top + rect.bottom };
+          setActiveSelection(selectionData);
+
+          // Android 浏览器的原生选区可能把 epub.js 分栏拉回本章开头。
+          // 先保存选区数据，再用长按前的 CFI 恢复这一页；即使 iframe 重绘，操作栏也不会丢。
+          const pageCfi = selectionStartCfi;
+          if (pageCfi) {
+            setTimeout(async () => {
+              try {
+                await rendition.display(pageCfi);
+                setActiveSelection(selectionData);
+              } catch (err) {
+                console.error('Restore page after selection error:', err);
+              }
+            }, 50);
+          }
         }, 350);
       });
     });
