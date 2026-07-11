@@ -641,7 +641,7 @@
 }
 .top-bar {
   display: grid;
-  grid-template-columns: 76px minmax(0, 1fr) 34px;
+  grid-template-columns: 76px minmax(0, 1fr) 76px;
   align-items: center;
   flex-shrink: 0;
   margin: calc(18px + env(safe-area-inset-top)) 16px 0;
@@ -713,7 +713,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  width: 34px;
+  width: 76px;
 }
 
 #messages {
