@@ -3105,15 +3105,14 @@
 }
 
 .reader-header {
-  margin: 46px 16px 0;
-  padding: 8px 14px;
-  border-bottom: none;
+  margin: 0;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(169, 138, 114, 0.12);
   background: rgba(255, 255, 255, 0.6);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(255, 255, 255, 0.7);
-  border-radius: 999px;
-  box-shadow: 0 6px 18px rgba(160, 120, 90, 0.14);
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .reader-back-btn {
@@ -3132,7 +3131,7 @@
 }
 
 .reader-footer {
-  padding: 12px 24px 24px;
+  padding: 8px 24px 12px;
   background: transparent;
   border-top: none;
   color: #b0a08c;
