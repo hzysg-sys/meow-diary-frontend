@@ -167,7 +167,7 @@ export default function MomentsPage({ show, onBack }) {
                 <div className="moment-comments">
                   {m.comments.map((c) => (
                     <div className="moment-comment" key={c.id}>
-                      <span className="moment-comment-name">{nameOf(c.author)}</span>
+                      <span className="moment-comment-name" style={c.author === 'ai' ? { color: '#7f93b3' } : undefined}>{nameOf(c.author)}</span>
                       <span className="moment-comment-text">：{c.content}</span>
                     </div>
                   ))}

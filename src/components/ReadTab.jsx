@@ -29,6 +29,7 @@ Mapping.prototype.splitTextNodeIntoRanges = function (node, _splitter) {
 import Avatar from './Avatar';
 import TypingIndicator from './TypingIndicator';
 import { sendChatMessage, discussBookPassage, apiFetch } from '../api';
+import { AI_AVATAR_URL } from '../constants';
 
 const API =
   import.meta.env.VITE_API_BASE_URL ||
@@ -987,6 +988,9 @@ export default function ReadTab({ active, sessionId }) {
     });
   };
 
+  const continueBook =
+    books.find(b => b.reading_progress > 0 && b.reading_progress < 100) || books[0];
+
   return (
     <div className="read-tab" style={{ display: active ? 'flex' : 'none' }}>
       <input type="file" ref={fileInputRef} accept=".epub,.txt" style={{ display: 'none' }} onChange={handleFileSelect} />
@@ -994,25 +998,17 @@ export default function ReadTab({ active, sessionId }) {
       {/* 书架视图 */}
       {!readerOpen && (
         <div className="shelf-container">
-          <div className="shelf-header">
-            <h2 className="shelf-title">阅读</h2>
-            <div className="shelf-header-btns">
-              <button className="shelf-btn" onClick={() => alert('划线功能开发中')}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 20h9" />
-                  <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                </svg>
-                划线
-              </button>
-              <button className="shelf-btn" onClick={handleImport}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                  <polyline points="17 8 12 3 7 8" />
-                  <line x1="12" y1="3" x2="12" y2="15" />
-                </svg>
-                导入
-              </button>
+          <div className="shelf-hero">
+            <div>
+              <div className="shelf-hero-title">阅读</div>
+              <div className="shelf-hero-sub">书架里有 {books.length} 本书</div>
             </div>
+            <button className="shelf-import-btn" onClick={handleImport} aria-label="导入">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
           </div>
 
           {loading && (
@@ -1033,29 +1029,52 @@ export default function ReadTab({ active, sessionId }) {
               <p>这里是空的哦<br />来上传一本书吧？</p>
             </div>
           ) : (
-            <div className="shelf-grid">
-              {books.map((book) => (
-                <div className="book-card" key={book.id} onClick={() => openReader(book)}>
-                  <div className="book-cover">
-                    {book.cover_url ? (
-                      <img src={book.cover_url} alt={book.title} />
-                    ) : (
-                      <div className="book-cover-txt" style={{ background: COVER_COLORS[book.id % COVER_COLORS.length] }}>
-                        <span className="book-cover-title">{book.title}</span>
-                        <div className="book-cover-line"></div>
-                        {book.author && <span className="book-cover-author">{book.author}</span>}
-                      </div>
-                    )}
-                    {book.reading_progress > 0 && (
-                      <div className="book-progress-bar-container">
-                        <div className="book-progress-bar-fill" style={{ width: `${book.reading_progress}%` }}></div>
-                      </div>
-                    )}
+            <div className="shelf-scroll">
+              {continueBook && (
+                <div className="shelf-continue" onClick={() => openReader(continueBook)}>
+                  <div className="shelf-continue-cover" style={{ background: continueBook.cover_url ? undefined : COVER_COLORS[continueBook.id % COVER_COLORS.length] }}>
+                    {continueBook.cover_url
+                      ? <img src={continueBook.cover_url} alt="" />
+                      : <span>{continueBook.title}</span>}
                   </div>
-                  <div className="book-card-title">{book.title}</div>
-                  <button className="book-delete-btn" onClick={(e) => handleDelete(book.id, e)}>✕</button>
+                  <div className="shelf-continue-info">
+                    <div className="shelf-continue-tag">继续阅读</div>
+                    <div className="shelf-continue-title">{continueBook.title}</div>
+                    {continueBook.author && <div className="shelf-continue-author">{continueBook.author}</div>}
+                    <div className="shelf-continue-progress">
+                      <div className="shelf-continue-track"><div style={{ width: `${continueBook.reading_progress || 0}%` }} /></div>
+                      <span>{continueBook.reading_progress || 0}%</span>
+                    </div>
+                  </div>
                 </div>
-              ))}
+              )}
+
+              <div className="shelf-section-label">全部书籍</div>
+              <div className="shelf-grid">
+                {books.map((book) => (
+                  <div className="book-card" key={book.id} onClick={() => openReader(book)}>
+                    <div className="book-cover">
+                      {book.cover_url ? (
+                        <img src={book.cover_url} alt={book.title} />
+                      ) : (
+                        <div className="book-cover-txt" style={{ background: COVER_COLORS[book.id % COVER_COLORS.length] }}>
+                          <span className="book-cover-title">{book.title}</span>
+                          <div className="book-cover-line" />
+                        </div>
+                      )}
+                      {book.reading_progress >= 100 && <span className="book-done">读完</span>}
+                      {book.reading_progress > 0 && book.reading_progress < 100 && (
+                        <div className="book-progress-bar-container">
+                          <div className="book-progress-bar-fill" style={{ width: `${book.reading_progress}%` }} />
+                        </div>
+                      )}
+                    </div>
+                    <div className="book-card-title">{book.title}</div>
+                    <div className="book-card-meta">{book.author ? `${book.author} · ` : ''}{book.reading_progress || 0}%</div>
+                    <button className="book-delete-btn" onClick={(e) => handleDelete(book.id, e)}>✕</button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -1169,6 +1188,20 @@ export default function ReadTab({ active, sessionId }) {
               </div>
             </div>
           )}
+
+          {(() => {
+            const note = highlights.filter(h => h.author === 'ai' && h.ai_reply).slice(-1)[0];
+            if (!note || immersive) return null;
+            return (
+              <div className="companion-note" onClick={() => openHighlightRecall(note)}>
+                <img src={AI_AVATAR_URL} alt="" />
+                <div>
+                  <div className="companion-note-head">Elias 在这句下面划了线</div>
+                  <div className="companion-note-body">{note.ai_reply}</div>
+                </div>
+              </div>
+            );
+          })()}
 
           <div className={`reader-footer ${immersive ? 'reader-footer-hidden' : ''}`}>
             <span>{pageInfo ? `本章 ${pageInfo.current}/${pageInfo.total} 页 · 全书 ${progress}%` : `${progress}%`}</span>
