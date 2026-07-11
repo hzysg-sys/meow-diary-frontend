@@ -3033,7 +3033,8 @@
 
 .shelf-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  /* minmax(0,1fr)：1fr 的最小宽默认是内容宽，nowrap 长书名会把列撑爆导致三列不均 */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 11px;
   align-content: start;
   overflow: visible;
@@ -3044,6 +3045,7 @@
   cursor: pointer;
   text-align: left;
   position: relative;
+  min-width: 0;
   background: rgba(255, 253, 253, 0.35);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
