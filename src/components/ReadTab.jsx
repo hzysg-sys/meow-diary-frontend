@@ -110,6 +110,8 @@ export default function ReadTab({ active, sessionId }) {
   // 打点定时器建得早（txt 正文还没加载），闭包会锁死旧状态；
   // 每次渲染把最新的 runCompanionRead 写进 ref，定时器永远调最新版
   const runCompanionReadRef = useRef(null);
+  // txt 最近一次划选的时间戳（防选词余波误触点击手势）
+  const lastTxtSelTsRef = useRef(0);
 
   useEffect(() => {
     activeSelectionRef.current = activeSelection;
@@ -443,10 +445,19 @@ export default function ReadTab({ active, sessionId }) {
       contents.document.addEventListener('scroll', resetInnerScroll, { capture: true, passive: true });
       contents.window.addEventListener('scroll', resetInnerScroll, { passive: true });
 
+      // 划选时间戳：选词结束时浏览器补发的 click 可能抢在选区状态建立之前/之后，
+      // 光靠"当前有没有选区"判断会漏，600ms 时间窗内的 click 一律不当翻页手势
+      let lastSelTs = 0;
+      contents.document.addEventListener('selectionchange', () => {
+        const s = contents.window.getSelection();
+        if (s && s.toString().trim()) lastSelTs = Date.now();
+      });
+
       // 翻页：iframe 内按可视区坐标判断（原透明覆盖层会挡住左右边缘的长按选词）。
       // iframe 本身比屏幕宽（整章分栏），clientX 要加上 iframe 相对视口的偏移才是屏幕位置
       contents.document.addEventListener('click', (e) => {
         if (activeSelectionRef.current) return; // 操作栏可见时，这次点击只用于收起它
+        if (Date.now() - lastSelTs < 600) return; // 刚划过词，这次点击是选词动作的余波
         const sel = contents.window.getSelection();
         if (sel && sel.toString().trim()) return;
         const frameRect = contents.window.frameElement.getBoundingClientRect();
@@ -696,6 +707,9 @@ export default function ReadTab({ active, sessionId }) {
     }
 
     const handler = () => {
+      // 划选时间戳先记（不等防抖），供 handleTxtClick 判断"这次点击是不是选词余波"
+      const rawSel = window.getSelection();
+      if (rawSel && rawSel.toString().trim()) lastTxtSelTsRef.current = Date.now();
       clearTimeout(timer);
       timer = setTimeout(() => {
         const sel = window.getSelection();
@@ -724,6 +738,7 @@ export default function ReadTab({ active, sessionId }) {
   const handleTxtClick = (e) => {
     const sel = window.getSelection().toString().trim();
     if (sel) return;
+    if (Date.now() - lastTxtSelTsRef.current < 600) return; // 刚划过词，不当点击手势
     const rect = readerContentRef.current.getBoundingClientRect();
     const y = e.clientY - rect.top;
     const h = rect.height;
