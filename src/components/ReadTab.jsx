@@ -445,19 +445,41 @@ export default function ReadTab({ active, sessionId }) {
       contents.document.addEventListener('scroll', resetInnerScroll, { capture: true, passive: true });
       contents.window.addEventListener('scroll', resetInnerScroll, { passive: true });
 
-      // 划选时间戳：选词结束时浏览器补发的 click 可能抢在选区状态建立之前/之后，
-      // 光靠"当前有没有选区"判断会漏，600ms 时间窗内的 click 一律不当翻页手势
-      let lastSelTs = 0;
+      // 手机长按会在 selectionchange 之前补发 click。只记录选区时间会漏掉这一下，
+      // 所以从按下开始计时：按住超过 350ms 的手势绝不当成翻页点击。
+      let pointerDownTs = 0;
+      let suppressClickUntil = 0;
+      const markPointerDown = () => { pointerDownTs = Date.now(); };
+      const markPointerUp = () => {
+        if (pointerDownTs && Date.now() - pointerDownTs >= 350) {
+          suppressClickUntil = Date.now() + 1000;
+        }
+      };
+      contents.document.addEventListener('pointerdown', markPointerDown, true);
+      contents.document.addEventListener('pointerup', markPointerUp, true);
+      contents.document.addEventListener('touchstart', markPointerDown, { capture: true, passive: true });
+      contents.document.addEventListener('touchend', markPointerUp, { capture: true, passive: true });
+      contents.document.addEventListener('contextmenu', () => {
+        suppressClickUntil = Date.now() + 1000;
+      }, true);
+
       contents.document.addEventListener('selectionchange', () => {
         const s = contents.window.getSelection();
-        if (s && s.toString().trim()) lastSelTs = Date.now();
+        if (s && s.toString().trim()) {
+          suppressClickUntil = Date.now() + 1000;
+          // 原生选区手柄可能先滚动 iframe 文档再派发 scroll；立即和下一帧都校正一次。
+          resetInnerScroll();
+          contents.window.requestAnimationFrame(resetInnerScroll);
+        }
       });
 
       // 翻页：iframe 内按可视区坐标判断（原透明覆盖层会挡住左右边缘的长按选词）。
       // iframe 本身比屏幕宽（整章分栏），clientX 要加上 iframe 相对视口的偏移才是屏幕位置
       contents.document.addEventListener('click', (e) => {
         if (activeSelectionRef.current) return; // 操作栏可见时，这次点击只用于收起它
-        if (Date.now() - lastSelTs < 600) return; // 刚划过词，这次点击是选词动作的余波
+        const pressDuration = pointerDownTs ? Date.now() - pointerDownTs : 0;
+        pointerDownTs = 0;
+        if (pressDuration >= 350 || Date.now() < suppressClickUntil) return;
         const sel = contents.window.getSelection();
         if (sel && sel.toString().trim()) return;
         const frameRect = contents.window.frameElement.getBoundingClientRect();
