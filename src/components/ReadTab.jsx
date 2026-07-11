@@ -540,6 +540,23 @@ export default function ReadTab({ active, sessionId }) {
         if (scrollLockFrame) contents.window.cancelAnimationFrame(scrollLockFrame);
         scrollLockFrame = 0;
       };
+
+      // rAF 锁是"每帧查一次"，安卓拖选区时会挤压 iframe 的 rAF 调度，浏览器的
+      // 选区自动滚动能抢在两帧之间滚动 container（= 翻页）并完成绘制。
+      // 补一道事件驱动的同步回弹：scroll 事件发生在绘制前，当场按回锁定值。
+      // 注册在外层 container 上，换章时先摘旧的防叠加
+      if (epubContainer) {
+        if (epubContainer.__selLockRestore) {
+          epubContainer.removeEventListener('scroll', epubContainer.__selLockRestore);
+        }
+        const restoreContainer = () => {
+          if (!scrollLock) return; // 锁未激活时不干涉（epub.js 正常翻页也走 scroll）
+          epubContainer.scrollLeft = scrollLock.containerLeft;
+          epubContainer.scrollTop = scrollLock.containerTop;
+        };
+        epubContainer.__selLockRestore = restoreContainer;
+        epubContainer.addEventListener('scroll', restoreContainer, { passive: true });
+      }
       const stopLockIfNoSelection = () => {
         contents.window.clearTimeout(releaseLockTimer);
         releaseLockTimer = contents.window.setTimeout(() => {
