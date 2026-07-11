@@ -436,14 +436,22 @@ export default function ReadTab({ active, sessionId }) {
       // 之前"松手后重新锚定"在手机拖选区手柄时经常收不到 touchend，修不干净。
       // 改为彻底禁止内部滚动：一滚就立刻拉回 0，画面永远和内部位置对齐。
       // 代价：选区拖到页边缘不再自动翻页，一次只能选当前页内的文字
-      // 手机长按会在 selectionchange 之前补发 click。只记录选区时间会漏掉这一下，
-      // 所以从按下开始计时：按住超过 350ms 的手势绝不当成翻页点击。
+      const resetInnerScroll = () => {
+        const de = contents.document.documentElement;
+        const body = contents.document.body;
+        if (de) { if (de.scrollLeft) de.scrollLeft = 0; if (de.scrollTop) de.scrollTop = 0; }
+        if (body) { if (body.scrollLeft) body.scrollLeft = 0; if (body.scrollTop) body.scrollTop = 0; }
+      };
+      contents.document.addEventListener('scroll', resetInnerScroll, { capture: true, passive: true });
+      contents.window.addEventListener('scroll', resetInnerScroll, { passive: true });
+
+      // 触摸翻页和浏览器合成 click 分开处理。长按选词永远不能进入翻页逻辑。
       let pointerDownTs = 0;
       let suppressClickUntil = 0;
-      let selectionStartCfi = null;
+      let lastTouchTs = 0;
+      let touchGesture = null;
       const markPointerDown = () => {
         pointerDownTs = Date.now();
-        selectionStartCfi = rendition.currentLocation()?.start?.cfi || lastLocationRef.current;
       };
       const markPointerUp = () => {
         if (pointerDownTs && Date.now() - pointerDownTs >= 350) {
@@ -452,8 +460,33 @@ export default function ReadTab({ active, sessionId }) {
       };
       contents.document.addEventListener('pointerdown', markPointerDown, true);
       contents.document.addEventListener('pointerup', markPointerUp, true);
-      contents.document.addEventListener('touchstart', markPointerDown, { capture: true, passive: true });
-      contents.document.addEventListener('touchend', markPointerUp, { capture: true, passive: true });
+      const navigateAt = (clientX) => {
+        const frameRect = contents.window.frameElement.getBoundingClientRect();
+        const x = frameRect.left + clientX;
+        const w = window.innerWidth;
+        if (x < w / 3) renditionRef.current?.prev();
+        else if (x > (w * 2) / 3) renditionRef.current?.next();
+        else toggleImmersive();
+      };
+      contents.document.addEventListener('touchstart', (e) => {
+        markPointerDown();
+        lastTouchTs = Date.now();
+        const t = e.touches[0];
+        touchGesture = t ? { started: Date.now(), x: t.clientX, y: t.clientY } : null;
+      }, { capture: true, passive: true });
+      contents.document.addEventListener('touchend', (e) => {
+        markPointerUp();
+        lastTouchTs = Date.now();
+        suppressClickUntil = Date.now() + 1000;
+        const start = touchGesture;
+        touchGesture = null;
+        const t = e.changedTouches[0];
+        if (!start || !t || Date.now() - start.started > 250) return;
+        if (Math.hypot(t.clientX - start.x, t.clientY - start.y) > 12) return;
+        const sel = contents.window.getSelection();
+        if (sel && sel.toString().trim()) return;
+        navigateAt(t.clientX);
+      }, { capture: true, passive: true });
       contents.document.addEventListener('contextmenu', () => {
         suppressClickUntil = Date.now() + 1000;
       }, true);
@@ -469,17 +502,13 @@ export default function ReadTab({ active, sessionId }) {
       // iframe 本身比屏幕宽（整章分栏），clientX 要加上 iframe 相对视口的偏移才是屏幕位置
       contents.document.addEventListener('click', (e) => {
         if (activeSelectionRef.current) return; // 操作栏可见时，这次点击只用于收起它
+        if (e.sourceCapabilities?.firesTouchEvents || Date.now() - lastTouchTs < 1500) return;
         const pressDuration = pointerDownTs ? Date.now() - pointerDownTs : 0;
         pointerDownTs = 0;
         if (pressDuration >= 350 || Date.now() < suppressClickUntil) return;
         const sel = contents.window.getSelection();
         if (sel && sel.toString().trim()) return;
-        const frameRect = contents.window.frameElement.getBoundingClientRect();
-        const x = frameRect.left + e.clientX;
-        const w = window.innerWidth;
-        if (x < w / 3) renditionRef.current && renditionRef.current.prev();
-        else if (x > (w * 2) / 3) renditionRef.current && renditionRef.current.next();
-        else toggleImmersive();
+        navigateAt(e.clientX);
       });
 
       let debounceTimer;
@@ -496,22 +525,7 @@ export default function ReadTab({ active, sessionId }) {
           const cfiRange = contents.cfiFromRange(sel.getRangeAt(0));
           const rect = sel.getRangeAt(0).getBoundingClientRect();
           const iframeRect = contents.window.frameElement.getBoundingClientRect();
-          const selectionData = { text, format: 'epub', cfiRange, anchorX: iframeRect.left + rect.left + rect.width / 2, anchorY: iframeRect.top + rect.bottom };
-          setActiveSelection(selectionData);
-
-          // Android 浏览器的原生选区可能把 epub.js 分栏拉回本章开头。
-          // 先保存选区数据，再用长按前的 CFI 恢复这一页；即使 iframe 重绘，操作栏也不会丢。
-          const pageCfi = selectionStartCfi;
-          if (pageCfi) {
-            setTimeout(async () => {
-              try {
-                await rendition.display(pageCfi);
-                setActiveSelection(selectionData);
-              } catch (err) {
-                console.error('Restore page after selection error:', err);
-              }
-            }, 50);
-          }
+          setActiveSelection({ text, format: 'epub', cfiRange, anchorX: iframeRect.left + rect.left + rect.width / 2, anchorY: iframeRect.top + rect.bottom });
         }, 350);
       });
     });
