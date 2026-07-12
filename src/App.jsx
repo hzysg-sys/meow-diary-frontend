@@ -79,9 +79,7 @@ function App() {
         <div className="main-content">
           <Home
             show={activeTab === 'home'}
-            onOpenChat={goChat}
             onOpenPlaceholder={goPlaceholder}
-            onOpenRead={() => setActiveTab('read')}
             onOpenEnergy={() => setView(VIEW.ENERGY)}
             onOpenMoments={() => setView(VIEW.MOMENTS)}
           />

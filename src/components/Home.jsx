@@ -1,61 +1,85 @@
-import { MEET_DATE } from '../constants'
-import { ChatCardIcon, MailboxIcon, EnergyIcon, ReadingIcon, MomentsIcon } from './icons'
-
-function computeDayCount() {
-  const now = new Date()
-  const a = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const b = new Date(MEET_DATE.getFullYear(), MEET_DATE.getMonth(), MEET_DATE.getDate())
-  const days = Math.floor((a - b) / 86400000) + 1
-  return days > 0 ? days : 1
-}
-
-export default function Home({ show, onOpenChat, onOpenPlaceholder, onOpenRead, onOpenEnergy, onOpenMoments }) {
-  const dayCount = computeDayCount()
+export default function Home({ show, onOpenPlaceholder, onOpenEnergy, onOpenMoments }) {
+  const apps = [
+    {
+      label: '音乐',
+      onClick: () => onOpenPlaceholder('音乐'),
+      icon: (
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#b3839a" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />
+        </svg>
+      ),
+    },
+    {
+      label: '精力',
+      onClick: onOpenEnergy,
+      icon: (
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#b3839a" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+        </svg>
+      ),
+    },
+    {
+      label: '朋友圈',
+      onClick: onOpenMoments,
+      icon: (
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#b3839a" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3.5" />
+        </svg>
+      ),
+    },
+    {
+      label: '游戏',
+      onClick: () => onOpenPlaceholder('游戏'),
+      icon: (
+        <svg width="27" height="27" viewBox="0 0 24 24" fill="none" stroke="#b3839a" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="2" y="7" width="20" height="11" rx="5.5" />
+          <line x1="7" y1="11" x2="7" y2="14" /><line x1="5.5" y1="12.5" x2="8.5" y2="12.5" />
+          <circle cx="16" cy="11.5" r="1" /><circle cx="18.5" cy="14" r="1" />
+        </svg>
+      ),
+    },
+  ]
 
   return (
     <div id="home" style={{ display: show ? 'block' : 'none' }}>
-      <div className="home-hero">
-        <div className="home-since-chip">
-          <span className="home-since-heart">♥</span>
-          <span>since 2026.06.03</span>
+      {/* 顶部情侣卡片：配图 + 磨砂面板 + 交界处双头像 */}
+      <div className="home-couple-card">
+        <div className="home-banner">
+          <img src="/home/card-banner.jpg" alt="" />
         </div>
-        <p className="home-day-number">{dayCount}</p>
-        <p className="home-day-text">一起的第 {dayCount} 天</p>
-        <p className="home-quote">&quot;直到有另一个人，能体会我的感觉。&quot;</p>
+        <div className="home-panel">
+          <div className="home-names">Yuen with Elias</div>
+          <div className="home-line">爱是平淡&nbsp;&nbsp;是陪伴</div>
+          <div className="home-line">是我和你一起无限循环</div>
+        </div>
+        <div className="home-avatars">
+          <div className="home-avatar home-avatar-me" />
+          <span className="home-amp">&amp;</span>
+          <div className="home-avatar home-avatar-him" />
+        </div>
       </div>
 
-      <div className="home-grid">
-        <button className="home-card home-card-lg" onClick={() => onOpenChat()}>
-          <div className="home-card-icon"><ChatCardIcon /></div>
-          <div>
-            <div className="home-card-label">聊天</div>
-            <div className="home-card-sub">和 Elias 说说话</div>
+      {/* 下半部：旋转唱片 + 2x2 应用 */}
+      <div className="home-deck">
+        <div className="home-record-wrap">
+          <div className="home-record">
+            <div className="home-record-ring home-record-ring-1" />
+            <div className="home-record-ring home-record-ring-2" />
+            <div className="home-record-img" />
+            <div className="home-record-dot" />
           </div>
-        </button>
-        <button className="home-card home-card-lg" onClick={() => onOpenPlaceholder('信箱')}>
-          <div className="home-card-icon"><MailboxIcon /></div>
-          <div>
-            <div className="home-card-label">信箱</div>
-            <div className="home-card-sub">来自他的信</div>
-          </div>
-        </button>
-      </div>
+          <div className="home-record-glare" />
+        </div>
 
-      <div className="home-grid home-grid-3">
-        <button className="home-card home-card-sm" onClick={onOpenEnergy}>
-          <div className="home-card-icon"><EnergyIcon /></div>
-          <div className="home-card-label">精力</div>
-        </button>
-        <button className="home-card home-card-sm" onClick={onOpenRead}>
-          <div className="home-card-icon"><ReadingIcon /></div>
-          <div className="home-card-label">阅读</div>
-        </button>
-        <button className="home-card home-card-sm" onClick={onOpenMoments}>
-          <div className="home-card-icon"><MomentsIcon /></div>
-          <div className="home-card-label">朋友圈</div>
-        </button>
+        <div className="home-apps">
+          {apps.map((app) => (
+            <button key={app.label} className="home-app" onClick={app.onClick}>
+              <div className="home-app-icon">{app.icon}</div>
+              <span className="home-app-label">{app.label}</span>
+            </button>
+          ))}
+        </div>
       </div>
-
     </div>
   )
 }
