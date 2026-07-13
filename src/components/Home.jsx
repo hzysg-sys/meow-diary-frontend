@@ -1,10 +1,10 @@
 const CEDAR_TOY_URL = 'https://toy.cedarstar.org/'
 
-export default function Home({ show, onOpenPlaceholder, onOpenEnergy, onOpenMoments }) {
+export default function Home({ show, onOpenMusic, onOpenEnergy, onOpenMoments }) {
   const apps = [
     {
       label: '音乐',
-      onClick: () => onOpenPlaceholder('音乐'),
+      onClick: onOpenMusic,
       icon: (
         <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#b3839a" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
           <path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" />

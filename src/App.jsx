@@ -2,7 +2,6 @@ import { useState, useEffect, lazy, Suspense } from 'react'
 import './App.css'
 import Splash from './components/Splash'
 import Home from './components/Home'
-import PlaceholderView from './components/PlaceholderView'
 import EnergyPage from './components/EnergyPage'
 import MomentsPage from './components/MomentsPage'
 import Sidebar from './components/Sidebar'
@@ -14,6 +13,8 @@ import HealthTab from './components/HealthTab'
 import MailTab from './components/MailTab'
 // epub.js 体积大，阅读模块单独分包按需加载
 const ReadTab = lazy(() => import('./components/ReadTab'))
+// Duetto 只有第一次打开音乐模块时才加载；退出后保留 iframe，音乐可以继续播放。
+const MusicPage = lazy(() => import('./components/MusicPage'))
 import { fetchSessions, createSession } from './api'
 import { resubscribeIfGranted } from './push'
 
@@ -21,15 +22,15 @@ const VIEW = {
   SPLASH: 'splash',
   MAIN: 'main',
   CHAT: 'chat',
-  PLACEHOLDER: 'placeholder',
   ENERGY: 'energy',
   MOMENTS: 'moments',
+  MUSIC: 'music',
 }
 
 function App() {
   const [view, setView] = useState(VIEW.SPLASH)
   const [activeTab, setActiveTab] = useState('home')
-  const [placeholderTitle, setPlaceholderTitle] = useState('')
+  const [musicOpened, setMusicOpened] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [currentSessionId, setCurrentSessionId] = useState(null)
@@ -63,9 +64,9 @@ function App() {
     setView(VIEW.CHAT)
   }
 
-  function goPlaceholder(title) {
-    setPlaceholderTitle(title)
-    setView(VIEW.PLACEHOLDER)
+  function goMusic() {
+    setMusicOpened(true)
+    setView(VIEW.MUSIC)
   }
 
   const showMain = view === VIEW.MAIN
@@ -79,7 +80,7 @@ function App() {
         <div className="main-content">
           <Home
             show={activeTab === 'home'}
-            onOpenPlaceholder={goPlaceholder}
+            onOpenMusic={goMusic}
             onOpenEnergy={() => setView(VIEW.ENERGY)}
             onOpenMoments={() => setView(VIEW.MOMENTS)}
           />
@@ -102,11 +103,15 @@ function App() {
         />
       </div>
 
-      <PlaceholderView show={view === VIEW.PLACEHOLDER} title={placeholderTitle} onBack={() => goMain('home')} />
-
       <EnergyPage show={view === VIEW.ENERGY} onBack={() => goMain('home')} />
 
       <MomentsPage show={view === VIEW.MOMENTS} onBack={() => goMain('home')} />
+
+      {musicOpened && (
+        <Suspense fallback={null}>
+          <MusicPage show={view === VIEW.MUSIC} onBack={() => goMain('home')} />
+        </Suspense>
+      )}
 
       <div id="app" className={view === VIEW.CHAT ? 'show' : ''}>
         <Sidebar
