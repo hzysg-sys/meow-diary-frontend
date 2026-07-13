@@ -1,3 +1,5 @@
+const CEDAR_TOY_URL = 'https://toy.cedarstar.org/'
+
 export default function Home({ show, onOpenPlaceholder, onOpenEnergy, onOpenMoments }) {
   const apps = [
     {
@@ -29,7 +31,7 @@ export default function Home({ show, onOpenPlaceholder, onOpenEnergy, onOpenMome
     },
     {
       label: '游戏',
-      onClick: () => onOpenPlaceholder('游戏'),
+      onClick: () => window.open(CEDAR_TOY_URL, '_blank', 'noopener,noreferrer'),
       icon: (
         <svg width="27" height="27" viewBox="0 0 24 24" fill="none" stroke="#b3839a" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <rect x="2" y="7" width="20" height="11" rx="5.5" />
