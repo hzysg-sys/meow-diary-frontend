@@ -251,6 +251,12 @@ export async function postMomentComment(id, content) {
   return data
 }
 
+export async function fetchDiary() {
+  const res = await apiFetch(`${API_BASE_URL}/api/diary`)
+  if (!res.ok) throw new Error(`加载日记失败 (${res.status})`)
+  return res.json()
+}
+
 export async function fetchEnergyState() {
   const res = await apiFetch(`${API_BASE_URL}/api/energy`)
   if (!res.ok) throw new Error(`加载精力状态失败 (${res.status})`)

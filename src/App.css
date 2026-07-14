@@ -107,6 +107,7 @@
   z-index: 10;
 }
 .tab-item {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -178,6 +179,157 @@
 .tab-placeholder-emoji {
   font-size: 20px;
   margin-top: 2px;
+}
+
+/* Tab 上的新日记红点 */
+.tab-dot {
+  position: absolute;
+  top: -2px;
+  right: calc(50% - 16px);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e88ba5;
+  border: 1.5px solid #fff;
+}
+
+/* 日记（他的心情随手记：按天分组，同一天多条，可上锁） */
+#diary-tab {
+  height: 100%;
+  flex-direction: column;
+  background-color: #f4e6ec;
+  background-image: url('/backgrounds/diary-bg.jpg');
+  background-size: cover;
+  background-position: center top;
+}
+.diary-head {
+  flex-shrink: 0;
+  padding: calc(20px + env(safe-area-inset-top)) 24px 12px;
+}
+.diary-title {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-style: italic;
+  font-size: 26px;
+  color: #a87b93;
+  line-height: 1.2;
+}
+.diary-subtitle {
+  font-size: 11px;
+  color: #c295a7;
+  letter-spacing: 1px;
+  line-height: 1.6;
+}
+.diary-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 20px calc(110px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.diary-hint {
+  text-align: center;
+  font-size: 13px;
+  color: #c4aaae;
+  padding: 32px 0;
+}
+.diary-error {
+  color: #d98a9d;
+}
+.diary-day {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.diary-day-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 2px;
+}
+.diary-day-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #9c7288;
+  letter-spacing: 1px;
+}
+.diary-day-sub {
+  font-size: 11px;
+  color: #c2a0af;
+}
+.diary-day-line {
+  flex: 1;
+  height: 1px;
+  background: rgba(160, 111, 136, 0.16);
+}
+.diary-entry {
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(12px) saturate(1.3);
+  -webkit-backdrop-filter: blur(12px) saturate(1.3);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 22px;
+  box-shadow: 0 6px 18px rgba(217, 167, 188, 0.16);
+  padding: 13px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.diary-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.diary-mood-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.diary-mood-name {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #b08a9c;
+}
+.diary-entry-time {
+  font-size: 11px;
+  color: #c7abb7;
+}
+.diary-entry-text {
+  font-size: 13.5px;
+  color: #7c5a6b;
+  line-height: 1.8;
+  letter-spacing: 0.3px;
+  white-space: pre-wrap;
+}
+.diary-locked {
+  position: relative;
+  border-radius: 14px;
+  overflow: hidden;
+}
+.diary-locked-blur {
+  font-size: 13.5px;
+  color: #7c5a6b;
+  line-height: 1.8;
+  letter-spacing: 0.3px;
+  filter: blur(6px);
+  user-select: none;
+}
+.diary-locked-mask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.25);
+  font-size: 12px;
+  color: #a87e90;
+  font-weight: 600;
+}
+.diary-end {
+  text-align: center;
+  font-size: 11px;
+  color: #cbaab7;
+  padding: 4px 0 2px;
 }
 
 /* Home（仿 iOS 桌面美化：壁纸 + 顶部情侣卡片 + 唱片 + 2x2 应用） */

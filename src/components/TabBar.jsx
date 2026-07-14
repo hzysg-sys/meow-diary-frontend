@@ -23,12 +23,14 @@ const TABS = [
     icon: null,
   },
   {
-    key: 'mail',
-    label: '信箱',
+    key: 'diary',
+    label: '日记',
     icon: (
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-        <polyline points="22,6 12,13 2,6" />
+        <path d="M4 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
+        <line x1="8" y1="2" x2="8" y2="22" />
+        <line x1="12" y1="8" x2="17" y2="8" />
+        <line x1="12" y1="12" x2="17" y2="12" />
       </svg>
     ),
   },
@@ -44,7 +46,7 @@ const TABS = [
   },
 ]
 
-export default function TabBar({ activeTab, onTabChange }) {
+export default function TabBar({ activeTab, onTabChange, diaryUnread }) {
   return (
     <div className="tab-bar">
       {TABS.map((tab) => (
@@ -61,6 +63,7 @@ export default function TabBar({ activeTab, onTabChange }) {
             tab.icon
           )}
           {tab.key !== 'home' && <span className="tab-label">{tab.label}</span>}
+          {tab.key === 'diary' && diaryUnread && <span className="tab-dot" />}
         </button>
       ))}
     </div>

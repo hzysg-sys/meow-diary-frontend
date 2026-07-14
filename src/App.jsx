@@ -10,12 +10,12 @@ import ChatView from './components/ChatView'
 import TabBar from './components/TabBar'
 import ChatListTab from './components/ChatListTab'
 import HealthTab from './components/HealthTab'
-import MailTab from './components/MailTab'
+import DiaryTab from './components/DiaryTab'
 // epub.js 体积大，阅读模块单独分包按需加载
 const ReadTab = lazy(() => import('./components/ReadTab'))
 // Duetto 只有第一次打开音乐模块时才加载；退出后保留 iframe，音乐可以继续播放。
 const MusicPage = lazy(() => import('./components/MusicPage'))
-import { fetchSessions, createSession } from './api'
+import { fetchSessions, createSession, fetchDiary } from './api'
 import { resubscribeIfGranted } from './push'
 
 const VIEW = {
@@ -34,10 +34,21 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [currentSessionId, setCurrentSessionId] = useState(null)
+  const [diaryUnread, setDiaryUnread] = useState(false)
 
   // 已授权通知的设备静默续订推送
   useEffect(() => {
     resubscribeIfGranted()
+  }, [])
+
+  // 他写了新日记就在 tab 上亮个红点（对比本地记住的"看到哪了"）
+  useEffect(() => {
+    fetchDiary()
+      .then((list) => {
+        const latest = list[0]?.created_at
+        if (latest && latest !== localStorage.getItem('diary-last-seen')) setDiaryUnread(true)
+      })
+      .catch(() => {})
   }, [])
 
   function goMain(tab = 'home') {
@@ -86,13 +97,14 @@ function App() {
           />
           <ChatListTab show={activeTab === 'chat'} />
           <HealthTab active={activeTab === 'health'} onNavigateToChat={(sid) => goChat(sid)} />
-          <MailTab show={activeTab === 'mail'} />
+          <DiaryTab show={activeTab === 'diary'} onSeen={() => setDiaryUnread(false)} />
           <Suspense fallback={null}>
             <ReadTab active={activeTab === 'read'} sessionId={currentSessionId} />
           </Suspense>
         </div>
         <TabBar
           activeTab={activeTab}
+          diaryUnread={diaryUnread}
           onTabChange={(tab) => {
             if (tab === 'chat') {
               goChat()
