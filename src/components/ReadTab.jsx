@@ -267,20 +267,27 @@ export default function ReadTab({ active, sessionId }) {
       const a = pagedRef.current?.getAnchor();
       if (!a) return;
       cfi = serializePosLoc(chapterIndexRef.current, a);
-      const findLabel = (items) => {
-        for (const it of items) {
-          if (it.href && currentChapterRef.current &&
-              currentChapterRef.current.includes(it.href.split('#')[0])) {
-            return it.label.trim();
+      // 大章节常被拆成多个 spine 文件（chapter007-1.html 这种续文件没有目录条目），
+      // 所以不找精确匹配，取"当前章节之前（含）最近的目录条目" = 所属章节名
+      const findLabel = () => {
+        const loader = epubLoaderRef.current;
+        if (!loader) return '';
+        let best = null;
+        const walk = (items) => {
+          for (const it of items) {
+            if (it.href) {
+              const idx = loader.hrefToIndex(it.href);
+              if (idx >= 0 && idx <= chapterIndexRef.current && (!best || idx >= best.idx)) {
+                best = { idx, label: it.label.trim() };
+              }
+            }
+            if (it.subitems && it.subitems.length) walk(it.subitems);
           }
-          if (it.subitems && it.subitems.length) {
-            const r = findLabel(it.subitems);
-            if (r) return r;
-          }
-        }
-        return '';
+        };
+        walk(tocItems);
+        return best ? best.label : '';
       };
-      excerpt = findLabel(tocItems) || `位置 ${pct}%`;
+      excerpt = findLabel() || `位置 ${pct}%`;
     } else {
       const el = readerContentRef.current;
       if (!el) return;
@@ -1048,6 +1055,7 @@ export default function ReadTab({ active, sessionId }) {
             </button>
           </div>
 
+          <div className="reader-panels">
           {showToc && !immersive && (
             <div className="toc-panel">
               <div className="toc-panel-title">目录</div>
@@ -1103,6 +1111,7 @@ export default function ReadTab({ active, sessionId }) {
               </div>
             </div>
           )}
+          </div>
 
           {currentBook.format === 'epub' && (
             <div className="epub-reader" style={readerBgStyle}>

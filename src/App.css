@@ -2436,9 +2436,15 @@
 }
 
 .bg-panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   padding: 12px 20px;
-  background: rgba(255,255,255,0.95);
+  background: rgba(255,255,255,0.97);
   border-bottom: 1px solid rgba(0,0,0,0.06);
+  border-radius: 0 0 16px 16px;
+  box-shadow: 0 14px 30px rgba(0,0,0,0.14);
 }
 
 .bg-panel-title {
@@ -2735,13 +2741,28 @@
 }
 
 /* 目录面板 */
+/* 面板浮层定位壳：零高度、不参与排版，面板绝对定位其中——
+   打开目录/书签/背景面板不再挤压阅读区，正文不重分页不动位 */
+.reader-panels {
+  position: relative;
+  height: 0;
+  overflow: visible;
+  z-index: 150;
+  flex-shrink: 0;
+}
+
 .toc-panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   max-height: 50vh;
   overflow-y: auto;
   background: rgba(255,255,255,0.97);
   border-bottom: 1px solid rgba(0,0,0,0.06);
+  border-radius: 0 0 16px 16px;
+  box-shadow: 0 14px 30px rgba(0,0,0,0.14);
   padding: 12px 0;
-  flex-shrink: 0;
 }
 
 .toc-panel-title {
