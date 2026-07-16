@@ -2583,6 +2583,14 @@
   width: 30%;
 }
 
+/* 划线菜单的透明遮罩：点空白关闭菜单，同时挡住下层的翻页点击 */
+.hl-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 299;
+  background: transparent;
+}
+
 .selection-actionbar {
   position: fixed;
   transform: translateX(-50%);

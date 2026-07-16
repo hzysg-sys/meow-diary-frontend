@@ -87,6 +87,8 @@ export default function ReadTab({ active, sessionId }) {
 
   const [highlights, setHighlights] = useState([]);
   const [activeSelection, setActiveSelection] = useState(null);
+  const [hlMenu, setHlMenu] = useState(null); // 点击划线弹出的小菜单 {h, x, y}
+  const migratedHlRef = useRef(new Set()); // 懒迁移防重入（本次会话内已写回的划线 id）
   const [epubReady, setEpubReady] = useState(false);
 
   const [discussOpen, setDiscussOpen] = useState(false);
@@ -617,6 +619,54 @@ export default function ReadTab({ active, sessionId }) {
     setDiscussOpen(true);
   };
 
+  // 旧 CFI 划线被文本匹配命中后，把新格式锚点写回数据库（懒迁移）：
+  // 下次直接按锚点渲染，不再依赖全文匹配，也能按章节过滤
+  const migrateHighlightAnchor = (h, anchor) => {
+    if (migratedHlRef.current.has(h.id)) return;
+    migratedHlRef.current.add(h.id);
+    const newLoc = serializeRangeLoc(chapterIndexRef.current, anchor);
+    apiFetch(`${API}/api/highlights/${h.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cfi_range: newLoc }),
+    })
+      .then(res => {
+        if (!res.ok) throw new Error(`迁移失败 (${res.status})`);
+        setHighlights(prev => prev.map(x => (x.id === h.id ? { ...x, cfi_range: newLoc } : x)));
+      })
+      .catch(err => {
+        migratedHlRef.current.delete(h.id); // 失败允许下次重试
+        console.error('划线锚点迁移失败:', err);
+      });
+  };
+
+  const recolorHighlight = async (h, color) => {
+    setHlMenu(null);
+    try {
+      const res = await apiFetch(`${API}/api/highlights/${h.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ color }),
+      });
+      if (!res.ok) throw new Error(`换色失败 (${res.status})`);
+      setHighlights(prev => prev.map(x => (x.id === h.id ? { ...x, color } : x)));
+    } catch (err) {
+      console.error('划线换色失败:', err);
+    }
+  };
+
+  const deleteHighlight = async (h) => {
+    setHlMenu(null);
+    if (!confirm('删除这条划线？')) return;
+    try {
+      const res = await apiFetch(`${API}/api/highlights/${h.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`删除失败 (${res.status})`);
+      setHighlights(prev => prev.filter(x => x.id !== h.id));
+    } catch (err) {
+      console.error('删除划线失败:', err);
+    }
+  };
+
   // epub 划线回显：交给 PagedReader（inline span，不触发重排）。
   // Elias = 蓝下划线，有讨论 = 粉下划线，普通划线 = 色块。
   // 新锚点(mk1)只画当前章节的；旧 CFI 划线退化为 selected_text 文本匹配。
@@ -627,15 +677,19 @@ export default function ReadTab({ active, sessionId }) {
       .map(h => {
         const parsed = parseLoc(h.cfi_range);
         if (parsed && parsed.c !== chapterIndex) return null;
-        const clickable = h.has_discussion || h.author === 'ai';
+        const hasRecall = h.has_discussion || h.author === 'ai';
         return {
           id: h.id,
           anchor: parsed?.anchor || null,
           textFallback: parsed ? null : h.selected_text,
+          onAnchorResolved: parsed ? null : (anchor) => migrateHighlightAnchor(h, anchor),
           // 她的笔迹一律粉系下划线（色点选的是深浅），Elias 一律蓝色下划线——同段重叠也分得清
           className: h.author === 'ai' ? 'hl-ai-line' : 'hl-user-line',
           style: h.author === 'ai' ? null : { textDecorationColor: underlineColorOf(h.color) },
-          onClick: clickable ? () => openHighlightRecall(h) : null,
+          // 有讨论/Elias 的划线点开回看内容；普通划线点开管理菜单（复制/换色/删除）
+          onClick: hasRecall
+            ? () => openHighlightRecall(h)
+            : (ev) => setHlMenu({ h, x: ev.clientX, y: ev.clientY }),
         };
       })
       .filter(Boolean);
@@ -771,6 +825,8 @@ export default function ReadTab({ active, sessionId }) {
     setPageInfo(null);
     setHighlights([]);
     setActiveSelection(null);
+    setHlMenu(null);
+    migratedHlRef.current.clear();
     setEpubReady(false);
     setDiscussOpen(false);
     setDiscussTurns([]);
@@ -847,7 +903,11 @@ export default function ReadTab({ active, sessionId }) {
                 ? { backgroundColor: 'transparent', borderBottom: `2px solid ${AI_UNDERLINE_STROKE}` }
                 : { backgroundColor: 'transparent', borderBottom: `2px solid ${underlineColorOf(seg.hl.color)}` }}
               data-highlight-id={seg.hl.id}
-              onClick={(seg.hl.discussed || seg.hl.isAi) ? (e) => { e.stopPropagation(); openHighlightRecall(seg.hl.h); } : undefined}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (seg.hl.discussed || seg.hl.isAi) openHighlightRecall(seg.hl.h);
+                else setHlMenu({ h: seg.hl.h, x: e.clientX, y: e.clientY });
+              }}
             >
               {seg.text}
             </mark>
@@ -1182,6 +1242,23 @@ export default function ReadTab({ active, sessionId }) {
               <div className="reader-progress-fill" style={{ width: `${progress}%` }}></div>
             </div>
           </div>
+
+          {hlMenu && (
+            <>
+              <div className="hl-menu-backdrop" onClick={() => setHlMenu(null)} />
+              <div className="selection-actionbar" style={{
+                left: Math.min(Math.max(hlMenu.x, 90), window.innerWidth - 90),
+                top: Math.min(hlMenu.y + 14, window.innerHeight - 70),
+              }}>
+                <button onClick={() => { navigator.clipboard?.writeText(hlMenu.h.selected_text || '').catch(() => {}); setHlMenu(null); }}>复制</button>
+                {HIGHLIGHT_COLORS.map(c => (
+                  <button key={c} className="color-dot" style={{ background: underlineColorOf(c) }} onClick={() => recolorHighlight(hlMenu.h, c)} />
+                ))}
+                <button onClick={() => deleteHighlight(hlMenu.h)}>删除</button>
+                <button onClick={() => setHlMenu(null)}>✕</button>
+              </div>
+            </>
+          )}
 
           {activeSelection && (
             <div className="selection-actionbar" style={{

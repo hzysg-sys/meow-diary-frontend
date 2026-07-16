@@ -106,7 +106,7 @@ function wrapRange(range, className, style, onClick, highlightId) {
     span.dataset.hlId = highlightId;
     if (onClick) {
       span.style.cursor = 'pointer';
-      span.addEventListener('click', (ev) => { ev.stopPropagation(); onClick(); });
+      span.addEventListener('click', (ev) => { ev.stopPropagation(); onClick(ev); });
     }
     target.parentNode.replaceChild(span, target);
     span.appendChild(target);
@@ -278,7 +278,14 @@ const PagedReader = forwardRef(function PagedReader(
     highlights.forEach(h => {
       let range = null;
       if (h.anchor) range = anchorToRange(inner, h.anchor.start, h.anchor.end);
-      if (!range && h.textFallback) range = findTextRange(inner, h.textFallback)?.range || null;
+      if (!range && h.textFallback) {
+        const found = findTextRange(inner, h.textFallback);
+        if (found) {
+          range = found.range;
+          // 旧划线文本匹配命中：把解析出的锚点回报给宿主做懒迁移写回
+          h.onAnchorResolved?.(found.anchor);
+        }
+      }
       if (!range) return;
       wrapRange(range, h.className, h.style, h.onClick, h.id);
     });
