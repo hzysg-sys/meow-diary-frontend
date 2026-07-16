@@ -101,6 +101,7 @@ export default function ReadTab({ active, sessionId }) {
   const epubLoaderRef = useRef(null);
   const pagedRef = useRef(null);
   const discussLoadSeqRef = useRef(0);
+  const chapterLoadSeqRef = useRef(0);
   const chapterIndexRef = useRef(0);
   const pendingLocRef = useRef(null); // 章节 HTML 落地后要跳的位置：{pos}|{anchor}|'last'|null
   const [chapterHtml, setChapterHtml] = useState('');
@@ -388,9 +389,17 @@ export default function ReadTab({ active, sessionId }) {
   const loadChapter = useCallback(async (idx, loc) => {
     const loader = epubLoaderRef.current;
     if (!loader) return;
+    const seq = ++chapterLoadSeqRef.current;
     const clamped = Math.max(0, Math.min(idx, loader.chapterCount - 1));
-    const data = await loader.loadChapter(clamped);
-    if (!data) return;
+    let data;
+    try {
+      data = await loader.loadChapter(clamped);
+    } catch (err) {
+      console.error('Load EPUB chapter error:', err);
+      return;
+    }
+    // Only the latest request for the current book may update the visible chapter.
+    if (seq !== chapterLoadSeqRef.current || loader !== epubLoaderRef.current || !data) return;
     chapterIndexRef.current = clamped;
     currentChapterRef.current = data.href;
     pendingLocRef.current = loc || null;
@@ -444,6 +453,7 @@ export default function ReadTab({ active, sessionId }) {
     return () => {
       cancelled = true;
       epubLoaderRef.current?.destroy();
+      chapterLoadSeqRef.current += 1;
       epubLoaderRef.current = null;
       setChapterHtml('');
       setChapterIndex(0);

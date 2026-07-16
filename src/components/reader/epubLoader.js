@@ -23,7 +23,12 @@ async function resolveImages(body, book, sectionHref, createdUrls) {
     if (!src || /^(data:|https?:)/.test(src)) continue;
     try {
       // 以章节所在目录为基准解析相对路径（../images/x.jpg 之类）
-      const path = decodeURIComponent(new URL(src, `http://epub/${dir}`).pathname.slice(1));
+      // Section hrefs are relative to the OPF directory (for example Text/...),
+      // while archive entries include that root (for example /OEBPS/Text/...).
+      // Resolve through Book so Archive.createUrl receives the full archive path.
+      const relativePath = decodeURIComponent(new URL(src, `http://epub/${dir}`).pathname.slice(1));
+      const path = book.resolve(relativePath);
+
       if (book.archive) {
         const url = await book.archive.createUrl(path, { base64: false });
         createdUrls.push(url);
@@ -50,6 +55,26 @@ export async function openEpub(fileUrl) {
 
   const createdUrls = [];
   const htmlCache = new Map();
+  const itemOps = new Map();
+
+  async function withLoadedItem(i, work) {
+    const previous = itemOps.get(i) || Promise.resolve();
+    const operation = previous.catch(() => {}).then(async () => {
+      const item = spineItems[i];
+      try {
+        await item.load(book.load.bind(book));
+        return await work(item);
+      } finally {
+        item.unload();
+      }
+    });
+    itemOps.set(i, operation);
+    try {
+      return await operation;
+    } finally {
+      if (itemOps.get(i) === operation) itemOps.delete(i);
+    }
+  }
 
   const loader = {
     toc: book.navigation?.toc || [],
@@ -70,14 +95,13 @@ export async function openEpub(fileUrl) {
     async loadChapter(i) {
       if (i < 0 || i >= spineItems.length) return null;
       if (htmlCache.has(i)) return htmlCache.get(i);
-      const item = spineItems[i];
-      await item.load(book.load.bind(book));
-      const srcBody = item.document?.body;
-      if (!srcBody) { item.unload(); return { html: '', href: item.href }; }
-      const body = sanitizeChapterBody(srcBody.cloneNode(true));
-      item.unload();
-      await resolveImages(body, book, item.href, createdUrls);
-      const result = { html: body.innerHTML, href: item.href };
+      const result = await withLoadedItem(i, async (item) => {
+        const srcBody = item.document?.body;
+        if (!srcBody) return { html: '', href: item.href };
+        const body = sanitizeChapterBody(srcBody.cloneNode(true));
+        await resolveImages(body, book, item.href, createdUrls);
+        return { html: body.innerHTML, href: item.href };
+      });
       htmlCache.set(i, result);
       if (htmlCache.size > 6) {
         // 只留最近的几章，免得整本书的 DOM 字符串都攒在内存里
@@ -90,11 +114,12 @@ export async function openEpub(fileUrl) {
     // 后台计算每章字数（用于精确的全书进度）；算完前调用方退回按章数估算
     async computeWeights() {
       const w = [];
-      for (const item of spineItems) {
+      for (let i = 0; i < spineItems.length; i += 1) {
         try {
-          await item.load(book.load.bind(book));
-          w.push((item.document?.body?.textContent || '').length || 1);
-          item.unload();
+          const length = await withLoadedItem(i, (item) =>
+            (item.document?.body?.textContent || '').length || 1
+          );
+          w.push(length);
         } catch {
           w.push(1);
         }
