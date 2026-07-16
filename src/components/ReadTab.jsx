@@ -59,8 +59,25 @@ const underlineColorOf = (c) => UNDERLINE_COLORS[c] || '#c98a98';
 // Elias 的笔迹色（淡青蓝，与用户的胭脂粉区分）
 const AI_HIGHLIGHT_COLOR = '#dce7f2';
 const AI_UNDERLINE_STROKE = '#8fa8c8';
-// 连续阅读满这么多分钟后，触发一次 Elias 陪读划线（每次打开书最多一次）
-const COMPANION_READ_AFTER_MIN = 10;
+// ==== M4 共读参数 ====
+const READ_DWELL_MS = 15000;    // 页面停留满 15 秒才算"真正读过"（防剧透边界的确认阈值）
+const READ_FLUSH_MS = 30000;    // 已读页最迟 30 秒批量上报一次
+const READ_BATCH_PAGES = 3;     // 攒满 3 页立即上报
+const LOOKAHEAD_PAGES = 5;      // Elias 领先她的前瞻窗口页数（库存模式）
+const POLL_MS = 4000;           // 增量拉取划线批注的间隔
+
+// mk1 定位串 -> 单点 {c,p,o}（范围取起点），用于边界比较
+const pointOfLoc = (str) => {
+  const d = parseLoc(str);
+  if (!d) return null;
+  return d.pos ? { c: d.c, p: d.pos.p, o: d.pos.o } : { c: d.c, p: d.anchor.start.p, o: d.anchor.start.o };
+};
+const cmpPoints = (a, b) => {
+  if (!a && !b) return 0;
+  if (!a) return -1;
+  if (!b) return 1;
+  return (a.c - b.c) || (a.p - b.p) || (a.o - b.o);
+};
 
 export default function ReadTab({ active, sessionId }) {
   const [books, setBooks] = useState([]);
@@ -113,12 +130,18 @@ export default function ReadTab({ active, sessionId }) {
 
   const fileInputRef = useRef(null);
   const sessionMinutesRef = useRef(0);
-  const companionDoneRef = useRef(false);
-  // 打点定时器建得早（txt 正文还没加载），闭包会锁死旧状态；
-  // 每次渲染把最新的 runCompanionRead 写进 ref，定时器永远调最新版
-  const runCompanionReadRef = useRef(null);
   // txt 最近一次划选的时间戳（防选词余波误触点击手势）
   const lastTxtSelTsRef = useRef(0);
+
+  // ==== M4 共读状态 ====
+  const pendingPagesRef = useRef([]);        // 停留确认、待上报的已读页
+  const confirmedKeysRef = useRef(new Set()); // 本次会话已确认过的页（防重复计时）
+  const dwellTimerRef = useRef(0);
+  const dwellKeyRef = useRef('');
+  const flushTimerRef = useRef(0);
+  const serverBoundaryRef = useRef(null);     // 服务器已知的已读边界 {c,p,o}
+  const lastLookaheadKeyRef = useRef('');     // 上次已送前瞻窗口的末端，防重复补货
+  const confirmPageRef = useRef(null);        // 定时器永远调最新版闭包
 
   useEffect(() => {
     activeSelectionRef.current = activeSelection;
@@ -360,6 +383,12 @@ export default function ReadTab({ active, sessionId }) {
   };
 
   const openReader = async (shelfBook) => {
+    // 上一本书的 M4 队列彻底清空（防失败重试的旧页漏进新书）
+    pendingPagesRef.current = [];
+    confirmedKeysRef.current.clear();
+    lastLookaheadKeyRef.current = '';
+    serverBoundaryRef.current = null;
+
     // 书架列表 state 可能被迟到的响应污染，打开时单独拉这一本的最新进度
     let book = shelfBook;
     const bookmarksPromise = loadBookmarks(shelfBook.id);
@@ -381,14 +410,30 @@ export default function ReadTab({ active, sessionId }) {
       console.error('Load fresh book error:', err);
     }
 
-    const [loadedBookmarks, loadedHighlights] = await Promise.all([bookmarksPromise, highlightsPromise]);
+    const readStatePromise = shelfBook.format === 'epub'
+      ? apiFetch(`${API}/api/books/${shelfBook.id}/read-state`)
+          .then(res => (res.ok ? res.json() : null))
+          .catch(() => null)
+      : Promise.resolve(null);
+
+    const [loadedBookmarks, loadedHighlights, readState] = await Promise.all([bookmarksPromise, highlightsPromise, readStatePromise]);
+
+    // 恢复位置取"最新动作"：最新书签 vs 关书自动保存的位置，谁的时间晚听谁的。
+    // （她的习惯是读完加书签——那书签就是最新动作，行为不变；只在忘加书签时兜底）
     const latestBookmark = loadedBookmarks.find(b => b.format === book.format);
-    if (book.format === 'epub' && latestBookmark?.cfi) {
-      book = {
-        ...book,
-        reading_location: latestBookmark.cfi,
-        reading_progress: latestBookmark.progress ?? book.reading_progress,
-      };
+    if (book.format === 'epub') {
+      const bmTime = latestBookmark?.cfi && latestBookmark?.created_at ? Date.parse(latestBookmark.created_at) : 0;
+      const autoTime = readState?.current_anchor && readState?.updated_at ? Date.parse(readState.updated_at) : 0;
+      if (bmTime >= autoTime && bmTime > 0) {
+        book = {
+          ...book,
+          reading_location: latestBookmark.cfi,
+          reading_progress: latestBookmark.progress ?? book.reading_progress,
+        };
+      } else if (autoTime > 0) {
+        book = { ...book, reading_location: readState.current_anchor };
+      }
+      serverBoundaryRef.current = pointOfLoc(readState?.read_boundary_anchor);
     }
 
     setHighlights(loadedHighlights);
@@ -438,6 +483,7 @@ export default function ReadTab({ active, sessionId }) {
   const updateProgressFromPage = (pg) => {
     if (!pg) return;
     setPageInfo({ current: pg.page, total: pg.total });
+    resetDwellTimer(); // M4：换页重新计 15 秒停留（重分页不算换页，内部按锚点判断）
     const loader = epubLoaderRef.current;
     if (!loader) return;
     const c = chapterIndexRef.current;
@@ -539,91 +585,109 @@ export default function ReadTab({ active, sessionId }) {
     }
   };
 
-  // ---- 陪读系统：阅读打点 + Elias 自己的划线批注（双色笔迹） ----
+  // ==== M4 阅读循环：停留确认 -> 批量上报 -> Elias 前瞻补货 ====
+  // （旧的"10 分钟触发一次 companion-pick"已由页级库存模式取代）
 
-  // 取她正在读的文本片段（txt 按滚动位置截取，epub 取当前章节可见内容）
-  const getReadingExcerpt = () => {
-    if (currentBook.format === 'txt') {
-      const el = readerContentRef.current;
-      if (!el || !bookContent) return null;
-      const pct = el.scrollTop / Math.max(1, el.scrollHeight - el.clientHeight);
-      const pos = Math.floor(bookContent.length * pct);
-      return bookContent.slice(Math.max(0, pos - 1000), pos + 3000);
-    }
-    const text = pagedRef.current?.getText() || '';
-    return text ? text.slice(0, 4000) : null;
-  };
+  // 批量上报已读页；有新内容时附带前瞻窗口给 Elias 补批注库存
+  const flushReadEvents = async () => {
+    const book = currentBook;
+    if (!book || book.format !== 'epub') return;
+    clearTimeout(flushTimerRef.current);
+    flushTimerRef.current = 0;
 
-  // 在 txt 内容里定位一段原文（行号 + 偏移，与 renderTxtContent 的行索引一致）
-  const locateInTxt = (needle) => {
-    const lines = bookContent.split('\n').filter(l => l.trim());
-    for (let i = 0; i < lines.length; i++) {
-      const idx = lines[i].indexOf(needle);
-      if (idx >= 0) return { lineIndex: i, endLineIndex: i, startOffset: idx, endOffset: idx + needle.length };
-    }
-    return null;
-  };
+    const confirmed = pendingPagesRef.current.splice(0);
+    if (!confirmed.length) return;
 
-  // 在 epub 当前章节里定位一段原文，返回定位串（找不到就放弃）
-  const locateInEpub = (needle) => {
-    const anchor = pagedRef.current?.findText(needle);
-    return anchor ? serializeRangeLoc(chapterIndexRef.current, anchor) : null;
-  };
+    const body = { confirmed };
+    const cur = pagedRef.current?.getAnchor();
+    if (cur) body.current_anchor = serializePosLoc(chapterIndexRef.current, cur);
 
-  const runCompanionRead = async () => {
-    const excerpt = getReadingExcerpt();
-    if (!excerpt || excerpt.length < 200) return;
-
-    const res = await apiFetch(`${API}/api/books/${currentBook.id}/companion-pick`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ excerpt }),
-    });
-    if (!res.ok) return;
-    const { picks } = await res.json();
-
-    for (const pick of (picks || [])) {
-      if (!pick?.text || !pick?.note) continue;
-      // 模型可能改写原文导致找不到，退一步用前 12 字前缀匹配
-      let payload = null;
-      let matched = null;
-      for (const cand of [pick.text.trim(), pick.text.trim().slice(0, 12)]) {
-        if (cand.length < 6) break;
-        if (currentBook.format === 'txt') {
-          const loc = locateInTxt(cand);
-          if (loc) {
-            payload = { format: 'txt', line_index: loc.lineIndex, end_line_index: loc.endLineIndex, start_offset: loc.startOffset, end_offset: loc.endOffset };
-            matched = cand;
-            break;
-          }
-        } else {
-          const cfi = locateInEpub(cand);
-          if (cfi) {
-            payload = { format: 'epub', cfi_range: cfi };
-            matched = cand;
-            break;
-          }
-        }
+    // 前瞻窗口：末端比上次送过的更远才带（库存去重第一道，后端还有第二道）
+    const paras = pagedRef.current?.getLookahead(LOOKAHEAD_PAGES) || [];
+    if (paras.length) {
+      const c = chapterIndexRef.current;
+      const key = `${c}:${paras[paras.length - 1].p}`;
+      if (key !== lastLookaheadKeyRef.current) {
+        body.lookahead = paras.map(x => ({ c, p: x.p, text: x.text }));
+        lastLookaheadKeyRef.current = key;
       }
-      if (!payload) continue;
+    }
 
-      const saveRes = await apiFetch(`${API}/api/books/${currentBook.id}/highlights`, {
+    try {
+      const res = await apiFetch(`${API}/api/books/${book.id}/read-events`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, selected_text: matched, color: AI_HIGHLIGHT_COLOR, author: 'ai', ai_reply: pick.note }),
+        body: JSON.stringify(body),
       });
-      if (!saveRes.ok) continue;
-      const saved = await saveRes.json();
-      setHighlights(prev => [...prev, saved]); // 回显由 epubHighlights → PagedReader 自动完成
+      if (!res.ok) throw new Error(`read-events ${res.status}`);
+      const data = await res.json();
+      if (data?.read_boundary_anchor) serverBoundaryRef.current = pointOfLoc(data.read_boundary_anchor);
+    } catch (err) {
+      // 上报失败塞回队列，下次一起重试
+      pendingPagesRef.current.unshift(...confirmed);
+      console.error('已读上报失败:', err);
     }
   };
-  runCompanionReadRef.current = runCompanionRead;
 
-  // 阅读打点：阅读器开着时每分钟上报一次；读满一定时长触发一次陪读划线
+  // 当前页停留满 15 秒：确认为"真正读过"，入待上报队列
+  const confirmCurrentPage = () => {
+    if (!readerOpen || currentBook?.format !== 'epub' || !pagedRef.current) return;
+    const pd = pagedRef.current.getPageData();
+    if (!pd || !pd.text.trim()) return;
+    const c = chapterIndexRef.current;
+    const key = `${c}:${pd.from.p}:${pd.from.o}`;
+    if (confirmedKeysRef.current.has(key)) return;
+    confirmedKeysRef.current.add(key);
+
+    const toStr = serializePosLoc(c, pd.to);
+    // 已在服务器边界之内的内容（回头重读）不用再报
+    if (cmpPoints(pointOfLoc(toStr), serverBoundaryRef.current) <= 0) return;
+
+    pendingPagesRef.current.push({
+      from: serializePosLoc(c, pd.from),
+      to: toStr,
+      text: pd.text.slice(0, 8000),
+    });
+    if (pendingPagesRef.current.length >= READ_BATCH_PAGES) flushReadEvents();
+    else if (!flushTimerRef.current) {
+      flushTimerRef.current = setTimeout(() => { flushTimerRef.current = 0; flushReadEvents(); }, READ_FLUSH_MS);
+    }
+  };
+  confirmPageRef.current = confirmCurrentPage;
+
+  // 翻到新页 -> 重置停留计时；批注插条引发的重分页不打断计时（按锚点判断是否真换页）
+  const resetDwellTimer = () => {
+    if (currentBook?.format !== 'epub') return;
+    const a = pagedRef.current?.getAnchor();
+    const key = a ? `${chapterIndexRef.current}:${a.p}:${a.o}` : '';
+    if (key && key === dwellKeyRef.current) return;
+    dwellKeyRef.current = key;
+    clearTimeout(dwellTimerRef.current);
+    dwellTimerRef.current = setTimeout(() => confirmPageRef.current?.(), READ_DWELL_MS);
+  };
+
+  // 每 4 秒增量拉取划线批注：Elias 的新笔迹几秒内出现在书页上。
+  // 内容没变化时保持原 state 引用，不触发无谓的重渲染/重分页
+  useEffect(() => {
+    if (!readerOpen || !currentBook || currentBook.format !== 'epub') return;
+    const bookId = currentBook.id;
+    const sig = (arr) => arr.map(h => `${h.id}:${h.has_discussion ? 1 : 0}:${h.ai_reply ? 1 : 0}:${h.color}:${h.cfi_range || ''}`).join('|');
+    const timer = setInterval(async () => {
+      try {
+        const res = await apiFetch(`${API}/api/books/${bookId}/highlights`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!Array.isArray(data)) return;
+        setHighlights(prev => (sig(prev) === sig(data) ? prev : data));
+      } catch { /* 网络抖动忽略，下个周期再拉 */ }
+    }, POLL_MS);
+    return () => clearInterval(timer);
+  }, [readerOpen, currentBook?.id]);
+
+  // 阅读打点（统计用）：阅读器开着时每分钟上报一次
   useEffect(() => {
     if (!readerOpen || !currentBook) return;
     sessionMinutesRef.current = 0;
-    companionDoneRef.current = false;
 
     const timer = setInterval(() => {
       sessionMinutesRef.current += 1;
@@ -632,11 +696,6 @@ export default function ReadTab({ active, sessionId }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ date: new Date().toLocaleDateString('sv') }),
       }).catch(() => {});
-
-      if (sessionMinutesRef.current >= COMPANION_READ_AFTER_MIN && !companionDoneRef.current) {
-        companionDoneRef.current = true;
-        runCompanionReadRef.current?.().catch(err => console.error('陪读划线失败:', err));
-      }
     }, 60000);
 
     return () => clearInterval(timer);
@@ -864,7 +923,22 @@ export default function ReadTab({ active, sessionId }) {
           body: JSON.stringify({ reading_progress: progress, reading_location: serializePosLoc(chapterIndexRef.current, a) }),
         }).catch(() => {});
       }
+      // M4：出清未上报的已读页，并触发一次共读记忆滚动压缩
+      clearTimeout(dwellTimerRef.current);
+      flushReadEvents().finally(() => {
+        apiFetch(`${API}/api/books/${currentBook.id}/consolidate`, { method: 'POST' }).catch(() => {});
+      });
     }
+
+    // M4 会话状态复位
+    clearTimeout(dwellTimerRef.current);
+    clearTimeout(flushTimerRef.current);
+    flushTimerRef.current = 0;
+    dwellKeyRef.current = '';
+    confirmedKeysRef.current.clear();
+    pendingPagesRef.current = [];
+    serverBoundaryRef.current = null;
+    lastLookaheadKeyRef.current = '';
 
     setReaderOpen(false);
     setCurrentBook(null);

@@ -194,20 +194,19 @@ const PagedReader = forwardRef(function PagedReader(
   // 不用 caretRangeFromPoint：分栏 + transform 下探测点落在 padding 时会吸附到
   // 完全不相干的段落（实测第四页取到第一页的段首）。改为确定性计算：
   // 找第一个与当前页水平相交的段落，段内二分出第一个落进本页的字符。
-  const computeAnchor = useCallback(() => {
-    const outer = outerRef.current;
+  // 以 refLeft 为"页左缘"计算该页第一个可见字符的锚点（泛化版，支持任意页）
+  const computeAnchorAt = useCallback((refLeft) => {
     const inner = innerRef.current;
-    if (!outer || !inner) return null;
-    const r = outer.getBoundingClientRect();
+    if (!inner) return null;
     const paras = inner.querySelectorAll('[data-p]');
     for (const para of paras) {
       const pr = para.getBoundingClientRect();
-      if (pr.right <= r.left + 2) continue; // 整段都在当前页左侧（前面的页）
+      if (pr.right <= refLeft + 2) continue; // 整段都在该页左侧（前面的页）
       const idx = parseInt(para.dataset.p, 10);
       const len = textOfPara(para).length;
-      // 段落起点就在本页（或本页之后），直接取段首
-      if (pr.left >= r.left - 2 || len === 0) return { p: idx, o: 0 };
-      // 段落从前页延续过来：二分找第一个 rect 进入本页的字符偏移
+      // 段落起点就在该页（或之后），直接取段首
+      if (pr.left >= refLeft - 2 || len === 0) return { p: idx, o: 0 };
+      // 段落从前页延续过来：二分找第一个 rect 进入该页的字符偏移
       const rectAt = (off) => {
         const pt = pointAt(para, off);
         if (!pt) return null;
@@ -220,13 +219,27 @@ const PagedReader = forwardRef(function PagedReader(
       while (lo <= hi) {
         const mid = (lo + hi) >> 1;
         const rc = rectAt(mid);
-        if (rc && rc.width + rc.height > 0 && rc.left >= r.left - 2) { ans = mid; hi = mid - 1; }
+        if (rc && rc.width + rc.height > 0 && rc.left >= refLeft - 2) { ans = mid; hi = mid - 1; }
         else lo = mid + 1;
       }
       return { p: idx, o: ans };
     }
     return null;
   }, []);
+
+  const computeAnchor = useCallback(() => {
+    const outer = outerRef.current;
+    if (!outer) return null;
+    return computeAnchorAt(outer.getBoundingClientRect().left);
+  }, [computeAnchorAt]);
+
+  // 第 pageIdx 页（0 起）的起始锚点：参照线按当前 transform 平移
+  const anchorForPage = useCallback((pageIdx) => {
+    const outer = outerRef.current;
+    if (!outer) return null;
+    const r = outer.getBoundingClientRect();
+    return computeAnchorAt(r.left + (pageIdx - pageRef.current) * stepRef.current);
+  }, [computeAnchorAt]);
 
   const goAnchor = useCallback((a) => {
     const container = innerRef.current;
@@ -260,6 +273,49 @@ const PagedReader = forwardRef(function PagedReader(
       const paras = innerRef.current?.querySelectorAll('[data-p]');
       return paras ? Array.from(paras, textOfPara).join('\n') : '';
     },
+    // 当前页的数据：起止锚点 + 页内纯文本（M4 已读上报用）
+    getPageData: () => {
+      const inner = innerRef.current;
+      const from = computeAnchor();
+      if (!inner || !from) return null;
+      const paras = inner.querySelectorAll('[data-p]');
+      if (!paras.length) return null;
+      let to = pageRef.current < totalRef.current - 1 ? anchorForPage(pageRef.current + 1) : null;
+      if (!to) {
+        const lastIdx = paras.length - 1;
+        to = { p: lastIdx, o: textOfPara(paras[lastIdx]).length };
+      }
+      let text = '';
+      for (let p = from.p; p <= to.p && p < paras.length; p++) {
+        const t = textOfPara(paras[p]);
+        const start = p === from.p ? from.o : 0;
+        const end = p === to.p ? Math.min(to.o, t.length) : t.length;
+        if (end > start) text += (text ? '\n' : '') + t.slice(start, end);
+      }
+      return { from, to, text };
+    },
+    // 当前页之后 pages 页覆盖到的完整段落（Elias 批注前瞻窗口；段落粒度取整）
+    getLookahead: (pages) => {
+      const inner = innerRef.current;
+      if (!inner) return [];
+      const cur = pageRef.current;
+      if (cur >= totalRef.current - 1) return [];
+      const paras = inner.querySelectorAll('[data-p]');
+      const start = anchorForPage(cur + 1);
+      if (!start) return [];
+      const endPage = Math.min(cur + pages, totalRef.current - 1);
+      let endP = paras.length - 1;
+      if (endPage < totalRef.current - 1) {
+        const endAnchor = anchorForPage(endPage + 1);
+        if (endAnchor) endP = endAnchor.p;
+      }
+      const out = [];
+      for (let p = start.p; p <= endP && p < paras.length; p++) {
+        const t = textOfPara(paras[p]);
+        if (t.trim()) out.push({ p, text: t });
+      }
+      return out;
+    },
     // 跳到章内锚点元素（脚注、小节 id），返回是否找到
     goToFragment: (fragId) => {
       const inner = innerRef.current;
@@ -276,7 +332,7 @@ const PagedReader = forwardRef(function PagedReader(
       applyPage(pageOfRect(rect));
       return true;
     },
-  }), [applyPage, computeAnchor, goAnchor, pageOfRect]);
+  }), [applyPage, computeAnchor, goAnchor, pageOfRect, anchorForPage]);
 
   // ---- 渲染章节 + 标段落 + 分页 ----
   useEffect(() => {
