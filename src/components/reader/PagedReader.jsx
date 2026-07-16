@@ -140,7 +140,7 @@ function wrapRange(range, className, style, onClick, highlightId) {
 }
 
 const PagedReader = forwardRef(function PagedReader(
-  { html, highlights, onPageChange, onEdge, onTapCenter, onSelection, onLink, selectionActive },
+  { html, highlights, onPageChange, onContentReady, onEdge, onTapCenter, onSelection, onLink, selectionActive },
   ref
 ) {
   const outerRef = useRef(null);
@@ -156,7 +156,7 @@ const PagedReader = forwardRef(function PagedReader(
   const selectionActiveRef = useRef(false);
   selectionActiveRef.current = selectionActive;
   const cbRef = useRef({});
-  cbRef.current = { onPageChange, onEdge, onTapCenter, onSelection, onLink };
+  cbRef.current = { onPageChange, onContentReady, onEdge, onTapCenter, onSelection, onLink };
 
   const applyPage = useCallback((p, notify = true) => {
     const inner = innerRef.current;
@@ -347,9 +347,11 @@ const PagedReader = forwardRef(function PagedReader(
       }
     });
 
+    const contentChanged = htmlChangedRef.current;
     measure();
     if (visibleAnchor) goAnchor(visibleAnchor);
     htmlChangedRef.current = false;
+    if (contentChanged) cbRef.current.onContentReady?.();
   }, [html, highlights, computeAnchor, goAnchor, measure]);
 
   // ---- 尺寸变化重分页（保持当前位置）----

@@ -254,9 +254,13 @@ export default function ReadTab({ active, sessionId }) {
       const res = await apiFetch(`${API}/api/books/${bookId}/bookmarks`);
       if (!res.ok) throw new Error(`加载书签失败 (${res.status})`);
       const data = await res.json();
-      setBookmarks(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      setBookmarks(list);
+      return list;
     } catch (err) {
       console.error('Load bookmarks error:', err);
+      setBookmarks([]);
+      return [];
     }
   };
 
@@ -304,20 +308,26 @@ export default function ReadTab({ active, sessionId }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ format: currentBook.format, cfi, progress: pct, excerpt }),
       });
+      if (!res.ok) throw new Error(`Save bookmark failed (${res.status})`);
       const saved = await res.json();
       if (saved && saved.id) setBookmarks(prev => [saved, ...prev]);
 
       // 书签同时充当"最后阅读位置"：下次打开这本书直接落在最新书签
       const location = currentBook.format === 'epub' ? cfi : String(readerContentRef.current?.scrollTop ?? 0);
-      await apiFetch(`${API}/api/books/${currentBook.id}/progress`, {
+      const progressRes = await apiFetch(`${API}/api/books/${currentBook.id}/progress`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reading_progress: pct, reading_location: location }),
       });
+      if (!progressRes.ok) throw new Error(`Save bookmark position failed (${progressRes.status})`);
       setBooks(prev => prev.map(b => b.id === currentBook.id
         ? { ...b, reading_progress: pct, reading_location: location }
         : b
       ));
+      setCurrentBook(prev => prev?.id === currentBook.id
+        ? { ...prev, reading_progress: pct, reading_location: location }
+        : prev
+      );
     } catch (err) {
       console.error('Add bookmark error:', err);
     }
@@ -352,6 +362,17 @@ export default function ReadTab({ active, sessionId }) {
   const openReader = async (shelfBook) => {
     // 书架列表 state 可能被迟到的响应污染，打开时单独拉这一本的最新进度
     let book = shelfBook;
+    const bookmarksPromise = loadBookmarks(shelfBook.id);
+    const highlightsPromise = apiFetch(`${API}/api/books/${shelfBook.id}/highlights`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`Load highlights failed (${res.status})`);
+        const data = await res.json();
+        return Array.isArray(data) ? data : [];
+      })
+      .catch((err) => {
+        console.error('Load highlights error:', err);
+        return [];
+      });
     try {
       const res = await apiFetch(`${API}/api/books/${shelfBook.id}`);
       const data = await res.json();
@@ -360,17 +381,23 @@ export default function ReadTab({ active, sessionId }) {
       console.error('Load fresh book error:', err);
     }
 
+    const [loadedBookmarks, loadedHighlights] = await Promise.all([bookmarksPromise, highlightsPromise]);
+    const latestBookmark = loadedBookmarks.find(b => b.format === book.format);
+    if (book.format === 'epub' && latestBookmark?.cfi) {
+      book = {
+        ...book,
+        reading_location: latestBookmark.cfi,
+        reading_progress: latestBookmark.progress ?? book.reading_progress,
+      };
+    }
+
+    setHighlights(loadedHighlights);
     setCurrentBook(book);
     setReaderOpen(true);
     setProgress(book.reading_progress || 0);
     setPageInfo(null);
     currentChapterRef.current = '';
-    loadBookmarks(book.id);
 
-    apiFetch(`${API}/api/books/${book.id}/highlights`)
-      .then(res => res.json())
-      .then(data => setHighlights(Array.isArray(data) ? data : []))
-      .catch(err => console.error('Load highlights error:', err));
 
     if (book.format === 'txt') {
       try {
@@ -463,8 +490,8 @@ export default function ReadTab({ active, sessionId }) {
   }, [readerOpen, currentBook?.id, loadChapter]);
 
   // 章节 HTML 落地（PagedReader 的子 effect 已完成分页测量）后应用待跳位置
-  useEffect(() => {
-    if (!chapterHtml || !pagedRef.current) return;
+  const applyPendingLocation = useCallback(() => {
+    if (!pagedRef.current) return;
     const loc = pendingLocRef.current;
     pendingLocRef.current = null;
     if (loc === 'last') pagedRef.current.goToLastPage();
@@ -472,7 +499,7 @@ export default function ReadTab({ active, sessionId }) {
     else if (loc?.anchor) pagedRef.current.goToAnchor(loc.anchor.start);
     else if (loc?.fragment) pagedRef.current.goToFragment(loc.fragment);
     updateProgressFromPage(pagedRef.current.getPage());
-  }, [chapterHtml]);
+  }, []);
 
   // 章尾/章首继续翻页 = 切章
   const handleEdge = (dir) => {
@@ -1258,6 +1285,7 @@ export default function ReadTab({ active, sessionId }) {
                 html={chapterHtml}
                 highlights={epubHighlights}
                 onPageChange={updateProgressFromPage}
+                onContentReady={applyPendingLocation}
                 onEdge={handleEdge}
                 onTapCenter={toggleImmersive}
                 onSelection={handleEpubSelection}
