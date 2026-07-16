@@ -15,13 +15,32 @@ const EDGE_DWELL_MS = 650;  // 贴边停留多久翻一页
 
 function paraOf(node) {
   const el = node.nodeType === 3 ? node.parentElement : node;
+  if (el?.closest?.('[data-reader-annotation]')) return null;
   return el?.closest?.('[data-p]') || null;
+}
+
+function textWalkerFor(para) {
+  return document.createTreeWalker(para, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) => (
+      node.parentElement?.closest?.('[data-reader-annotation]')
+        ? NodeFilter.FILTER_REJECT
+        : NodeFilter.FILTER_ACCEPT
+    ),
+  });
+}
+
+function textOfPara(para) {
+  const walker = textWalkerFor(para);
+  let text = '';
+  let node;
+  while ((node = walker.nextNode())) text += node.data;
+  return text;
 }
 
 // (textNode, offsetInNode) -> 段内字符偏移
 function offsetInPara(para, node, offset) {
   let total = 0;
-  const walker = document.createTreeWalker(para, NodeFilter.SHOW_TEXT);
+  const walker = textWalkerFor(para);
   let t;
   while ((t = walker.nextNode())) {
     if (t === node) return total + offset;
@@ -33,7 +52,7 @@ function offsetInPara(para, node, offset) {
 // 段内字符偏移 -> (textNode, offsetInNode)
 function pointAt(para, offset) {
   let remain = offset;
-  const walker = document.createTreeWalker(para, NodeFilter.SHOW_TEXT);
+  const walker = textWalkerFor(para);
   let t;
   let last = null;
   while ((t = walker.nextNode())) {
@@ -67,7 +86,7 @@ function findTextRange(container, needle) {
   if (!needle || needle.length < 4) return null;
   const paras = container.querySelectorAll('[data-p]');
   for (let i = 0; i < paras.length; i++) {
-    const text = paras[i].textContent || '';
+    const text = textOfPara(paras[i]);
     const idx = text.indexOf(needle);
     if (idx < 0) continue;
     const s = pointAt(paras[i], idx);
@@ -86,9 +105,14 @@ function wrapRange(range, className, style, onClick, highlightId) {
   const root = range.commonAncestorContainer;
   const rootEl = root.nodeType === 3 ? root.parentElement : root;
   const walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT, {
-    acceptNode: (n) => (range.intersectsNode(n) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT),
+    acceptNode: (n) => (
+      !n.parentElement?.closest?.('[data-reader-annotation]') && range.intersectsNode(n)
+        ? NodeFilter.FILTER_ACCEPT
+        : NodeFilter.FILTER_REJECT
+    ),
   });
   const targets = [];
+  const spans = [];
   let n;
   while ((n = walker.nextNode())) targets.push(n);
 
@@ -110,7 +134,9 @@ function wrapRange(range, className, style, onClick, highlightId) {
     }
     target.parentNode.replaceChild(span, target);
     span.appendChild(target);
+    spans.push(span);
   });
+  return spans;
 }
 
 const PagedReader = forwardRef(function PagedReader(
@@ -126,6 +152,7 @@ const PagedReader = forwardRef(function PagedReader(
   const selDebounceRef = useRef(0);
   const suppressClickUntilRef = useRef(0);
   const pointerDownTsRef = useRef(0);
+  const htmlChangedRef = useRef(false);
   const selectionActiveRef = useRef(false);
   selectionActiveRef.current = selectionActive;
   const cbRef = useRef({});
@@ -177,7 +204,7 @@ const PagedReader = forwardRef(function PagedReader(
       const pr = para.getBoundingClientRect();
       if (pr.right <= r.left + 2) continue; // 整段都在当前页左侧（前面的页）
       const idx = parseInt(para.dataset.p, 10);
-      const len = (para.textContent || '').length;
+      const len = textOfPara(para).length;
       // 段落起点就在本页（或本页之后），直接取段首
       if (pr.left >= r.left - 2 || len === 0) return { p: idx, o: 0 };
       // 段落从前页延续过来：二分找第一个 rect 进入本页的字符偏移
@@ -229,7 +256,10 @@ const PagedReader = forwardRef(function PagedReader(
       const found = innerRef.current && findTextRange(innerRef.current, needle);
       return found ? found.anchor : null;
     },
-    getText: () => innerRef.current?.innerText || '',
+    getText: () => {
+      const paras = innerRef.current?.querySelectorAll('[data-p]');
+      return paras ? Array.from(paras, textOfPara).join('\n') : '';
+    },
     // 跳到章内锚点元素（脚注、小节 id），返回是否找到
     goToFragment: (fragId) => {
       const inner = innerRef.current;
@@ -252,6 +282,7 @@ const PagedReader = forwardRef(function PagedReader(
   useEffect(() => {
     const inner = innerRef.current;
     if (!inner) return;
+    htmlChangedRef.current = true;
     inner.innerHTML = html || '';
     const blocks = inner.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, blockquote, pre, dd, dt, td');
     let i = 0;
@@ -264,10 +295,15 @@ const PagedReader = forwardRef(function PagedReader(
     });
   }, [html, measure]);
 
-  // ---- 划线回显（inline span 不触发重排，可随 highlights 变化重复执行）----
+  // ---- 划线 + 批注条回显 ----
+  // 批注条是真正进入正文流的块级元素，会改变分页。重排前记住当前页首字符，
+  // 重排后按字符锚点回去；章节刚切换时则交给宿主应用 pendingLoc，避免抢跳。
   useEffect(() => {
     const inner = innerRef.current;
     if (!inner || !highlights) return;
+    const visibleAnchor = htmlChangedRef.current ? null : computeAnchor();
+
+    inner.querySelectorAll('[data-reader-annotation]').forEach(note => note.remove());
     // 清掉上一轮的包裹（unwrap）再按当前列表重画
     inner.querySelectorAll('[data-hl-id]').forEach(span => {
       const parent = span.parentNode;
@@ -287,9 +323,34 @@ const PagedReader = forwardRef(function PagedReader(
         }
       }
       if (!range) return;
-      wrapRange(range, h.className, h.style, h.onClick, h.id);
+      const spans = wrapRange(range, h.className, h.style, h.onClick, h.id);
+      if (h.annotation?.text && spans.length) {
+        const note = document.createElement('button');
+        note.type = 'button';
+        note.className = `reader-annotation reader-annotation-${h.annotation.author === 'ai' ? 'ai' : 'user'}`;
+        note.dataset.readerAnnotation = String(h.id);
+        note.setAttribute('aria-label', `${h.annotation.label || '批注'}：${h.annotation.text}`);
+
+        const label = document.createElement('span');
+        label.className = 'reader-annotation-label';
+        label.textContent = h.annotation.label || (h.annotation.author === 'ai' ? 'Elias' : '我的批注');
+        const body = document.createElement('span');
+        body.className = 'reader-annotation-body';
+        body.textContent = h.annotation.text;
+        note.append(label, body);
+        note.addEventListener('click', (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          h.annotation.onClick?.();
+        });
+        spans[spans.length - 1].insertAdjacentElement('afterend', note);
+      }
     });
-  }, [html, highlights]);
+
+    measure();
+    if (visibleAnchor) goAnchor(visibleAnchor);
+    htmlChangedRef.current = false;
+  }, [html, highlights, computeAnchor, goAnchor, measure]);
 
   // ---- 尺寸变化重分页（保持当前位置）----
   useEffect(() => {
@@ -412,7 +473,7 @@ const PagedReader = forwardRef(function PagedReader(
         if (!/^(https?:|mailto:)/i.test(href)) cbRef.current.onLink?.(href);
         return;
       }
-      if (e.target.closest('[data-hl-id]')) return; // 点划线走划线自己的回调
+      if (e.target.closest('[data-hl-id], [data-reader-annotation]')) return; // 点划线/批注走自己的回调
       const pressDuration = pointerDownTsRef.current ? Date.now() - pointerDownTsRef.current : 0;
       pointerDownTsRef.current = 0;
       if (pressDuration >= 350 || Date.now() < suppressClickUntilRef.current) return;

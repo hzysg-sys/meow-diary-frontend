@@ -2559,6 +2559,71 @@
   text-underline-offset: 4px;
 }
 
+
+/* M3：批注作为正文流里的长条，插入后由分栏内核重新计算页数 */
+.reader-annotation {
+  appearance: none;
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0.55em 0 0.95em;
+  padding: 9px 12px 10px;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-radius: 5px;
+  text-align: left;
+  text-indent: 0;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+  letter-spacing: 0.1px;
+  color: #4b5563;
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  break-before: avoid-column;
+  break-inside: avoid;
+}
+
+.reader-annotation-ai {
+  background: rgba(220, 231, 242, 0.78);
+  border-left-color: #8fa8c8;
+}
+
+.reader-annotation-user {
+  background: rgba(247, 229, 234, 0.82);
+  border-left-color: #cf8fa3;
+}
+
+.reader-annotation-label {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #7890ad;
+}
+
+.reader-annotation-user .reader-annotation-label {
+  color: #b56f86;
+}
+
+.reader-annotation-body {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+.reader-annotation:focus-visible {
+  outline: 2px solid rgba(143, 168, 200, 0.5);
+  outline-offset: 2px;
+}
+
+.txt-content > .reader-annotation {
+  margin-top: -0.35em;
+}
 .reader-tap-zones {
   position: absolute;
   top: 0;

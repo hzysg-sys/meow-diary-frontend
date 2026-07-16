@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { Fragment, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ePub, { EpubCFI } from 'epubjs';
 import PagedReader from './reader/PagedReader';
 import { openEpub } from './reader/epubLoader';
@@ -23,8 +23,7 @@ const legacyCfiChapter = (cfi) => {
 };
 import Avatar from './Avatar';
 import TypingIndicator from './TypingIndicator';
-import { sendChatMessage, discussBookPassage, apiFetch } from '../api';
-import { AI_AVATAR_URL } from '../constants';
+import { discussBookPassage, fetchAnnotationDiscussion, discussAnnotation, apiFetch } from '../api';
 
 const API =
   import.meta.env.VITE_API_BASE_URL ||
@@ -97,10 +96,11 @@ export default function ReadTab({ active, sessionId }) {
   const [discussInput, setDiscussInput] = useState('');
   const [discussTurns, setDiscussTurns] = useState([]);
   const [discussLoading, setDiscussLoading] = useState(false);
-  const [discussFirstTurnDone, setDiscussFirstTurnDone] = useState(false);
+  const [discussHighlightId, setDiscussHighlightId] = useState(null);
 
   const epubLoaderRef = useRef(null);
   const pagedRef = useRef(null);
+  const discussLoadSeqRef = useRef(0);
   const chapterIndexRef = useRef(0);
   const pendingLocRef = useRef(null); // 章节 HTML 落地后要跳的位置：{pos}|{anchor}|'last'|null
   const [chapterHtml, setChapterHtml] = useState('');
@@ -606,17 +606,27 @@ export default function ReadTab({ active, sessionId }) {
   }, [readerOpen, currentBook?.id]);
 
   // 点击有讨论的划线段落（或 Elias 的批注），回看内容（继续输入会作为普通追问发给 Elias）
-  const openHighlightRecall = (h) => {
+  const openHighlightRecall = async (h) => {
     if (!h) return;
     if (!h.has_discussion && h.author !== 'ai') return;
-    const turns = [];
-    if (h.user_thought) turns.push({ role: 'user', content: h.user_thought });
-    if (h.ai_reply) turns.push({ role: 'assistant', content: h.ai_reply });
+    const requestId = ++discussLoadSeqRef.current;
+    const seedTurns = [];
+    if (h.user_thought) seedTurns.push({ role: 'user', content: h.user_thought });
+    if (h.ai_reply) seedTurns.push({ role: 'assistant', content: h.ai_reply });
     setDiscussPassage({ text: h.selected_text });
-    setDiscussTurns(turns);
-    setDiscussFirstTurnDone(true);
+    setDiscussTurns(seedTurns);
+    setDiscussHighlightId(h.id);
     setDiscussFull(false);
     setDiscussOpen(true);
+    setDiscussLoading(true);
+    try {
+      const data = await fetchAnnotationDiscussion(h.id);
+      if (requestId === discussLoadSeqRef.current && Array.isArray(data?.turns)) setDiscussTurns(data.turns);
+    } catch (err) {
+      console.error('加载批注讨论失败:', err);
+    } finally {
+      if (requestId === discussLoadSeqRef.current) setDiscussLoading(false);
+    }
   };
 
   // 旧 CFI 划线被文本匹配命中后，把新格式锚点写回数据库（懒迁移）：
@@ -678,6 +688,7 @@ export default function ReadTab({ active, sessionId }) {
         const parsed = parseLoc(h.cfi_range);
         if (parsed && parsed.c !== chapterIndex) return null;
         const hasRecall = h.has_discussion || h.author === 'ai';
+        const annotationText = h.author === 'ai' ? h.ai_reply : h.user_thought;
         return {
           id: h.id,
           anchor: parsed?.anchor || null,
@@ -686,6 +697,12 @@ export default function ReadTab({ active, sessionId }) {
           // 她的笔迹一律粉系下划线（色点选的是深浅），Elias 一律蓝色下划线——同段重叠也分得清
           className: h.author === 'ai' ? 'hl-ai-line' : 'hl-user-line',
           style: h.author === 'ai' ? null : { textDecorationColor: underlineColorOf(h.color) },
+          annotation: annotationText ? {
+            author: h.author === 'ai' ? 'ai' : 'user',
+            label: h.author === 'ai' ? 'Elias' : '我的批注',
+            text: annotationText,
+            onClick: () => openHighlightRecall(h),
+          } : null,
           // 有讨论/Elias 的划线点开回看内容；普通划线点开管理菜单（复制/换色/删除）
           onClick: hasRecall
             ? () => openHighlightRecall(h)
@@ -830,7 +847,7 @@ export default function ReadTab({ active, sessionId }) {
     setEpubReady(false);
     setDiscussOpen(false);
     setDiscussTurns([]);
-    setDiscussFirstTurnDone(false);
+    setDiscussHighlightId(null);
     loadBooks();
   };
 
@@ -892,31 +909,51 @@ export default function ReadTab({ active, sessionId }) {
 
   const renderTxtContent = () => {
     if (!bookContent) return <p style={{ color: '#999', textAlign: 'center', marginTop: 40 }}>加载中...</p>;
-    return bookContent.split('\n').filter(line => line.trim()).map((line, i) => (
-      <p key={i} data-line-index={i}>
-        {getLineSegments(i, line).map((seg, si) =>
-          seg.hl ? (
-            <mark
-              key={si}
-              className={(seg.hl.discussed || seg.hl.isAi) ? 'txt-highlight txt-highlight-discussed' : 'txt-highlight'}
-              style={seg.hl.isAi
-                ? { backgroundColor: 'transparent', borderBottom: `2px solid ${AI_UNDERLINE_STROKE}` }
-                : { backgroundColor: 'transparent', borderBottom: `2px solid ${underlineColorOf(seg.hl.color)}` }}
-              data-highlight-id={seg.hl.id}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (seg.hl.discussed || seg.hl.isAi) openHighlightRecall(seg.hl.h);
-                else setHlMenu({ h: seg.hl.h, x: e.clientX, y: e.clientY });
-              }}
+    return bookContent.split('\n').filter(line => line.trim()).map((line, i) => {
+      const annotations = highlights.filter((h) => {
+        if (h.format !== 'txt') return false;
+        const endLine = h.end_line_index ?? h.line_index;
+        return endLine === i && (h.author === 'ai' ? h.ai_reply : h.user_thought);
+      });
+      return (
+        <Fragment key={i}>
+          <p data-line-index={i}>
+            {getLineSegments(i, line).map((seg, si) =>
+              seg.hl ? (
+                <mark
+                  key={si}
+                  className={(seg.hl.discussed || seg.hl.isAi) ? 'txt-highlight txt-highlight-discussed' : 'txt-highlight'}
+                  style={seg.hl.isAi
+                    ? { backgroundColor: 'transparent', borderBottom: `2px solid ${AI_UNDERLINE_STROKE}` }
+                    : { backgroundColor: 'transparent', borderBottom: `2px solid ${underlineColorOf(seg.hl.color)}` }}
+                  data-highlight-id={seg.hl.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (seg.hl.discussed || seg.hl.isAi) openHighlightRecall(seg.hl.h);
+                    else setHlMenu({ h: seg.hl.h, x: e.clientX, y: e.clientY });
+                  }}
+                >
+                  {seg.text}
+                </mark>
+              ) : (
+                <span key={si}>{seg.text}</span>
+              )
+            )}
+          </p>
+          {annotations.map(h => (
+            <button
+              type="button"
+              key={h.id}
+              className={`reader-annotation reader-annotation-${h.author === 'ai' ? 'ai' : 'user'}`}
+              onClick={(e) => { e.stopPropagation(); openHighlightRecall(h); }}
             >
-              {seg.text}
-            </mark>
-          ) : (
-            <span key={si}>{seg.text}</span>
-          )
-        )}
-      </p>
-    ));
+              <span className="reader-annotation-label">{h.author === 'ai' ? 'Elias' : '我的批注'}</span>
+              <span className="reader-annotation-body">{h.author === 'ai' ? h.ai_reply : h.user_thought}</span>
+            </button>
+          ))}
+        </Fragment>
+      );
+    });
   };
 
   // 讨论面板逻辑
@@ -924,17 +961,19 @@ export default function ReadTab({ active, sessionId }) {
     if (!activeSelection) return;
     setDiscussPassage(activeSelection);
     setDiscussTurns([]);
-    setDiscussFirstTurnDone(false);
+    setDiscussHighlightId(null);
     setDiscussFull(false);
     setDiscussOpen(true);
     dismissSelection();
   };
 
   const closeDiscuss = () => {
+    discussLoadSeqRef.current += 1;
     setDiscussOpen(false);
     setDiscussFull(false);
     setDiscussPassage(null);
     setDiscussTurns([]);
+    setDiscussHighlightId(null);
   };
 
   const handleDiscussSend = async () => {
@@ -950,7 +989,7 @@ export default function ReadTab({ active, sessionId }) {
         sid = sessions?.[0]?.id;
       }
       let reply;
-      if (!discussFirstTurnDone) {
+      if (!discussHighlightId) {
         const payload = {
           session_id: sid,
           user_thought: text,
@@ -964,18 +1003,22 @@ export default function ReadTab({ active, sessionId }) {
             id: data.highlightId,
             ...buildHighlightPayload(discussPassage, HIGHLIGHT_COLORS[1]),
             has_discussion: true,
+            author: 'user',
             user_thought: text,
             ai_reply: reply,
           };
           setHighlights(prev => [...prev, newHl]);
+          setDiscussHighlightId(data.highlightId);
         }
-        setDiscussFirstTurnDone(true);
       } else {
-        const data = await sendChatMessage(sid, text);
+        const data = await discussAnnotation(discussHighlightId, {
+          session_id: sid,
+          content: text,
+        });
         reply = data.reply;
       }
       setDiscussTurns(prev => [...prev, { role: 'assistant', content: reply }]);
-    } catch (err) {
+    } catch {
       setDiscussTurns(prev => [...prev, { role: 'assistant', content: 'Elias 走神了，再试一次吧' }]);
     } finally {
       setDiscussLoading(false);
@@ -1221,20 +1264,6 @@ export default function ReadTab({ active, sessionId }) {
               </div>
             </div>
           )}
-
-          {(() => {
-            const note = highlights.filter(h => h.author === 'ai' && h.ai_reply).slice(-1)[0];
-            if (!note || immersive) return null;
-            return (
-              <div className="companion-note" onClick={() => openHighlightRecall(note)}>
-                <img src={AI_AVATAR_URL} alt="" />
-                <div>
-                  <div className="companion-note-head">Elias 在这句下面划了线</div>
-                  <div className="companion-note-body">{note.ai_reply}</div>
-                </div>
-              </div>
-            );
-          })()}
 
           <div className={`reader-footer ${immersive ? 'reader-footer-hidden' : ''}`}>
             <span>{pageInfo ? `本章 ${pageInfo.current}/${pageInfo.total} 页 · 全书 ${progress}%` : `${progress}%`}</span>

@@ -200,6 +200,31 @@ export async function discussBookPassage(bookId, payload) {
   return data
 }
 
+
+export async function fetchAnnotationDiscussion(highlightId) {
+  const res = await apiFetch(`${API_BASE_URL}/api/annotations/${highlightId}/discussion`)
+  const data = await res.json().catch(() => null)
+  if (!res.ok) {
+    throw new Error(data?.error || `加载批注讨论失败 (${res.status})`)
+  }
+  return data
+}
+
+export async function discussAnnotation(highlightId, payload) {
+  const res = await apiFetch(`${API_BASE_URL}/api/annotations/${highlightId}/discuss`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...payload, client_time: clientTimeString() }),
+  })
+  const data = await res.json().catch(() => null)
+  if (!res.ok) {
+    throw new Error(data?.error || `批注讨论请求失败 (${res.status})`)
+  }
+  if (data?.error === 'empty_response') {
+    throw Object.assign(new Error(data.message || ''), { code: 'empty_response' })
+  }
+  return data
+}
 export async function fetchVapidPublicKey() {
   const res = await apiFetch(`${API_BASE_URL}/api/push/vapid-public-key`)
   if (!res.ok) throw new Error(`获取推送密钥失败 (${res.status})`)
