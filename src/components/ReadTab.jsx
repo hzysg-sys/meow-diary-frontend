@@ -1,43 +1,25 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ePub, { EpubCFI } from 'epubjs';
-import Mapping from 'epubjs/src/mapping';
+import PagedReader from './reader/PagedReader';
+import { openEpub } from './reader/epubLoader';
 
-// epub.js 计算"当前屏从哪个字开始"时按空格分词，中文整段没有空格会退化成
-// "整段算一个词"——relocated 报出来的位置只有段落级精度，长段落里加的书签
-// 全都指向段首（实测同一长段落内每一屏的 start.cfi 完全相同）。
-// 补丁：按空格切分之外，超过 15 字的连续文本强制按 15 字一块再切，
-// 让位置精度从"一整段"提高到"15 字以内"
-const WORD_CHUNK = 15;
-const SELECTION_CHUNK = 80;
-const SELECTION_CHUNK_CLASS = 'epub-selection-chunk';
-const origSplitTextNode = Mapping.prototype.splitTextNodeIntoRanges;
-Mapping.prototype.splitTextNodeIntoRanges = function (node, _splitter) {
-  if (node.nodeType !== Node.TEXT_NODE) return origSplitTextNode.call(this, node, _splitter);
-  const text = node.textContent || '';
-  const splitter = _splitter || ' ';
-  const doc = node.ownerDocument;
-  const ranges = [];
-  let segStart = 0;
-  const push = (s, e) => {
-    if (e > s) { const r = doc.createRange(); r.setStart(node, s); r.setEnd(node, e); ranges.push(r); }
-  };
-  for (let i = 0; i < text.length; i++) {
-    if (text[i] === splitter) { push(segStart, i); segStart = i + 1; }
-    else if (i - segStart + 1 >= WORD_CHUNK) { push(segStart, i + 1); segStart = i + 1; }
-  }
-  push(segStart, text.length);
-  return ranges.length ? ranges : origSplitTextNode.call(this, node, _splitter);
+// epub 定位串（存在 cfi_range / cfi / reading_location 这几个 text 列里）：
+// 新格式 "mk1:{...}"，旧数据是 "epubcfi(...)"。旧划线靠 selected_text 文本匹配回显，
+// 旧书签/进度只能恢复到章节开头（一次性代价，不做批量迁移）。
+const serializeRangeLoc = (c, anchor) =>
+  `mk1:${JSON.stringify({ c, s: [anchor.start.p, anchor.start.o], e: [anchor.end.p, anchor.end.o] })}`;
+const serializePosLoc = (c, a) => `mk1:${JSON.stringify({ c, p: a.p, o: a.o })}`;
+const parseLoc = (str) => {
+  if (!str || !str.startsWith('mk1:')) return null;
+  try {
+    const d = JSON.parse(str.slice(4));
+    if (Array.isArray(d.s)) return { c: d.c, anchor: { start: { p: d.s[0], o: d.s[1] }, end: { p: d.e[0], o: d.e[1] } } };
+    return { c: d.c, pos: { p: d.p, o: d.o } };
+  } catch { return null; }
 };
-// 运行时插入的选区分段不应改变书签、划线和当前页的 CFI。
-Mapping.prototype.rangePairToCfiPair = function (cfiBase, rangePair) {
-  const startRange = rangePair.start;
-  const endRange = rangePair.end;
-  startRange.collapse(true);
-  endRange.collapse(false);
-  return {
-    start: new EpubCFI(startRange, cfiBase, SELECTION_CHUNK_CLASS).toString(),
-    end: new EpubCFI(endRange, cfiBase, SELECTION_CHUNK_CLASS).toString(),
-  };
+// 旧 CFI 只提取章节序号
+const legacyCfiChapter = (cfi) => {
+  try { return Math.max(0, new EpubCFI(cfi).spinePos); } catch { return 0; }
 };
 import Avatar from './Avatar';
 import TypingIndicator from './TypingIndicator';
@@ -66,6 +48,14 @@ const PRESET_BGS = [
 ];
 
 const HIGHLIGHT_COLORS = ['#faeef0', '#f3dde1', '#ecd4da', '#f2e8e2'];
+// 下划线用色：旧数据存的是淡色块底色，画 2px 下划线太浅看不见，映射到同系加深色
+const UNDERLINE_COLORS = {
+  '#faeef0': '#dba8b6',
+  '#f3dde1': '#cf8fa3',
+  '#ecd4da': '#c47b93',
+  '#f2e8e2': '#c9a08a',
+};
+const underlineColorOf = (c) => UNDERLINE_COLORS[c] || '#c98a98';
 
 // Elias 的笔迹色（淡青蓝，与用户的胭脂粉区分）
 const AI_HIGHLIGHT_COLOR = '#dce7f2';
@@ -107,12 +97,13 @@ export default function ReadTab({ active, sessionId }) {
   const [discussLoading, setDiscussLoading] = useState(false);
   const [discussFirstTurnDone, setDiscussFirstTurnDone] = useState(false);
 
-  const epubRef = useRef(null);
-  const renditionRef = useRef(null);
-  const viewerRef = useRef(null);
+  const epubLoaderRef = useRef(null);
+  const pagedRef = useRef(null);
+  const chapterIndexRef = useRef(0);
+  const pendingLocRef = useRef(null); // 章节 HTML 落地后要跳的位置：{pos}|{anchor}|'last'|null
+  const [chapterHtml, setChapterHtml] = useState('');
+  const [chapterIndex, setChapterIndex] = useState(0);
   const readerContentRef = useRef(null);
-  const epubSelectionContentsRef = useRef(null);
-  const lastLocationRef = useRef(null);
   const loadSeqRef = useRef(0);
   const currentChapterRef = useRef('');
   const activeSelectionRef = useRef(null);
@@ -273,8 +264,9 @@ export default function ReadTab({ active, sessionId }) {
     let excerpt = '';
 
     if (currentBook.format === 'epub') {
-      cfi = lastLocationRef.current;
-      if (!cfi) return;
+      const a = pagedRef.current?.getAnchor();
+      if (!a) return;
+      cfi = serializePosLoc(chapterIndexRef.current, a);
       const findLabel = (items) => {
         for (const it of items) {
           if (it.href && currentChapterRef.current &&
@@ -331,38 +323,15 @@ export default function ReadTab({ active, sessionId }) {
     }
   };
 
-  // epub.js 的 display(cfi) 有个老毛病：带字符偏移的 CFI 经常只落到目标所在
-  // 段落开头那一屏，段落长时会比实际位置早一到几屏。display 后比较目标 CFI
-  // 是否落在当前屏的 [start, end] 区间内，不在就单页步进修正到准确那一屏
-  const displayEpubCfi = async (cfi) => {
-    const rendition = renditionRef.current;
-    if (!rendition) return;
-    if (!cfi) { await rendition.display(); return; }
-    await rendition.display(cfi);
-    try {
-      const comparer = new EpubCFI();
-      let prevStart = null;
-      for (let i = 0; i < 20; i++) {
-        const loc = rendition.currentLocation();
-        if (!loc || !loc.start || !loc.end) {
-          // display 刚落地时 location 可能还没算好，稍等重试而不是放弃校正
-          await new Promise(r => setTimeout(r, 100));
-          continue;
-        }
-        if (loc.start.cfi === prevStart) break; // 翻不动了（到书头/书尾）
-        prevStart = loc.start.cfi;
-        if (comparer.compare(cfi, loc.start.cfi) < 0) await rendition.prev();
-        else if (comparer.compare(cfi, loc.end.cfi) > 0) await rendition.next();
-        else break;
-      }
-    } catch (err) {
-      console.error('CFI 定位修正失败:', err);
-    }
-  };
-
   const jumpToBookmark = (bm) => {
     if (currentBook.format === 'epub') {
-      if (bm.cfi && renditionRef.current) displayEpubCfi(bm.cfi);
+      const parsed = parseLoc(bm.cfi);
+      if (parsed) {
+        if (parsed.c === chapterIndexRef.current && pagedRef.current) pagedRef.current.goToAnchor(parsed.pos || parsed.anchor?.start);
+        else loadChapter(parsed.c, parsed.pos ? { pos: parsed.pos } : null);
+      } else if (bm.cfi) {
+        loadChapter(legacyCfiChapter(bm.cfi), null); // 旧书签只能回到章节开头
+      }
     } else if (readerContentRef.current) {
       const el = readerContentRef.current;
       el.scrollTop = ((bm.progress || 0) / 100) * (el.scrollHeight - el.clientHeight);
@@ -406,292 +375,98 @@ export default function ReadTab({ active, sessionId }) {
     }
   };
 
+  // 加载指定章节；loc: {pos:{p,o}} | {anchor:{start,end}} | 'last' | null(章首)
+  const loadChapter = useCallback(async (idx, loc) => {
+    const loader = epubLoaderRef.current;
+    if (!loader) return;
+    const clamped = Math.max(0, Math.min(idx, loader.chapterCount - 1));
+    const data = await loader.loadChapter(clamped);
+    if (!data) return;
+    chapterIndexRef.current = clamped;
+    currentChapterRef.current = data.href;
+    pendingLocRef.current = loc || null;
+    setChapterIndex(clamped);
+    setChapterHtml(data.html);
+  }, []);
+
+  // 全书进度：有字数权重按字数算，权重还没算完就按章节数估
+  const updateProgressFromPage = (pg) => {
+    if (!pg) return;
+    setPageInfo({ current: pg.page, total: pg.total });
+    const loader = epubLoaderRef.current;
+    if (!loader) return;
+    const c = chapterIndexRef.current;
+    const frac = pg.total ? pg.page / pg.total : 0;
+    const w = loader.weights;
+    if (w && w.length === loader.chapterCount) {
+      const totalW = w.reduce((a, b) => a + b, 0) || 1;
+      const before = w.slice(0, c).reduce((a, b) => a + b, 0);
+      setProgress(Math.round(((before + frac * w[c]) / totalW) * 100));
+    } else {
+      setProgress(Math.round(((c + frac) / Math.max(1, loader.chapterCount)) * 100));
+    }
+  };
+
   useEffect(() => {
     if (!readerOpen || !currentBook || currentBook.format !== 'epub') return;
-    if (!viewerRef.current) return;
+    let cancelled = false;
 
-    if (renditionRef.current) renditionRef.current.destroy();
-    if (epubRef.current) epubRef.current.destroy();
+    (async () => {
+      try {
+        const loader = await openEpub(currentBook.file_url);
+        if (cancelled) { loader.destroy(); return; }
+        epubLoaderRef.current = loader;
+        setTocItems(loader.toc);
+        setEpubReady(true);
 
-    const book = ePub(currentBook.file_url);
-    epubRef.current = book;
+        // 恢复上次位置：新格式(mk1)带章内锚点，旧 CFI 只能回到所在章节开头
+        const saved = currentBook.reading_location;
+        const parsed = parseLoc(saved);
+        if (parsed) await loadChapter(parsed.c, parsed.pos ? { pos: parsed.pos } : null);
+        else if (saved && String(saved).startsWith('epubcfi(')) await loadChapter(legacyCfiChapter(saved), null);
+        else await loadChapter(0, null);
 
-    const rendition = book.renderTo(viewerRef.current, {
-      width: '100%',
-      height: '100%',
-      spread: 'none',
-      flow: 'paginated',
-      ignoreClass: SELECTION_CHUNK_CLASS,
-    });
-    renditionRef.current = rendition;
-
-    // 拖选到边缘时浏览器会 auto-scroll 这个容器造成翻页；overflow hidden 后
-    // epub.js 编程式赋值 scrollLeft 翻页不受影响，原生 auto-scroll 则失效
-    const epubContainer = viewerRef.current.querySelector('.epub-container');
-    if (epubContainer) epubContainer.style.overflow = 'hidden';
-
-    // 拖原生选区手柄跨页缘时收不到任何 touch 事件（手柄是系统 UI），iframe 内的
-    // scrollLock 罩不住——浏览器会转而滚动 iframe 外层祖先（阅读器容器/主滚动区），
-    // 外层一歪整页布局就错位。这条链路本应永远停在 0：捕获阶段一滚就钉回去。
-    // epubContainer 除外（它的 scrollLeft 是 epub.js 的翻页位置，由 scrollLock 管）
-    const pinOuterAncestors = () => {
-      let el = viewerRef.current;
-      while (el && el !== document.body) {
-        if (el !== epubContainer) {
-          if (el.scrollLeft) el.scrollLeft = 0;
-          if (el.scrollTop) el.scrollTop = 0;
-        }
-        el = el.parentElement;
+        loader.computeWeights().catch(() => {});
+      } catch (err) {
+        console.error('打开 epub 失败:', err);
       }
-    };
-    document.addEventListener('scroll', pinOuterAncestors, { capture: true, passive: true });
-
-    rendition.themes.default({
-      body: {
-        'background': bgValue,
-        'font-size': '17px !important',
-        'line-height': '1.85 !important',
-        'color': '#2c2c2c !important',
-        'padding': '16px !important',
-        '-webkit-user-select': 'text !important',
-        'user-select': 'text !important',
-        '-webkit-touch-callout': 'default !important',
-      }
-    });
-
-    rendition.hooks.content.register((contents) => {
-      // 中文 EPUB 常把数千字放在同一个文本节点里。Android 原生选区会把这个
-      // 巨大节点的开头当作锚点，导致任何一页选字都滚回段落（甚至章节）第一页。
-      // 用可忽略的 inline span 切成小段：视觉不变，选区锚点只覆盖当前几行。
-      const doc = contents.document;
-      const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
-      const longTextNodes = [];
-      let textNode;
-      while ((textNode = walker.nextNode())) {
-        const parentTag = textNode.parentElement?.tagName;
-        if (textNode.data.length > SELECTION_CHUNK && parentTag !== 'SCRIPT' && parentTag !== 'STYLE') {
-          longTextNodes.push(textNode);
-        }
-      }
-      longTextNodes.forEach((node) => {
-        const fragment = doc.createDocumentFragment();
-        for (let i = 0; i < node.data.length; i += SELECTION_CHUNK) {
-          const span = doc.createElement('span');
-          span.className = SELECTION_CHUNK_CLASS;
-          span.textContent = node.data.slice(i, i + SELECTION_CHUNK);
-          fragment.appendChild(span);
-        }
-        node.parentNode?.replaceChild(fragment, node);
-      });
-
-      // annotations 内部调用 contents.range(cfi) 时也使用同一忽略类，兼容旧划线。
-      const originalRange = contents.range.bind(contents);
-      contents.range = (cfi, ignoreClass = SELECTION_CHUNK_CLASS) => originalRange(cfi, ignoreClass);
-
-      // 拖选到页面边缘时，浏览器原生 auto-scroll 会把 iframe 内文档滚出
-      // epub.js 的分栏对齐位置——眼睛看到的内容从此比 epub.js 内部记录的
-      // 位置靠后一到几屏，书签/页码/划线全跟着偏早，布局也出现半列错位。
-      // 之前"松手后重新锚定"在手机拖选区手柄时经常收不到 touchend，修不干净。
-      // 改为彻底禁止内部滚动：一滚就立刻拉回 0，画面永远和内部位置对齐。
-      // 代价：选区拖到页边缘不再自动翻页，一次只能选当前页内的文字
-      const resetInnerScroll = () => {
-        const de = contents.document.documentElement;
-        const body = contents.document.body;
-        if (de) { if (de.scrollLeft) de.scrollLeft = 0; if (de.scrollTop) de.scrollTop = 0; }
-        if (body) { if (body.scrollLeft) body.scrollLeft = 0; if (body.scrollTop) body.scrollTop = 0; }
-      };
-      contents.document.addEventListener('scroll', resetInnerScroll, { capture: true, passive: true });
-      contents.window.addEventListener('scroll', resetInnerScroll, { passive: true });
-
-      // 这本书存在横跨很多分页的超长段落。Android 拖动原生选区时会连续
-      // auto-scroll，单靠 scroll 事件回拉偶尔赶不上绘制；选区存续期间逐帧锁位。
-      let scrollLock = null;
-      let scrollLockFrame = 0;
-      let releaseLockTimer = 0;
-      const applyScrollLock = () => {
-        if (!scrollLock) return;
-        const de = contents.document.documentElement;
-        const body = contents.document.body;
-        if (de) { de.scrollLeft = scrollLock.deLeft; de.scrollTop = scrollLock.deTop; }
-        if (body) { body.scrollLeft = scrollLock.bodyLeft; body.scrollTop = scrollLock.bodyTop; }
-        if (epubContainer) {
-          epubContainer.scrollLeft = scrollLock.containerLeft;
-          epubContainer.scrollTop = scrollLock.containerTop;
-        }
-        scrollLockFrame = contents.window.requestAnimationFrame(applyScrollLock);
-      };
-      const startScrollLock = () => {
-        contents.window.clearTimeout(releaseLockTimer);
-        const de = contents.document.documentElement;
-        const body = contents.document.body;
-        scrollLock = {
-          deLeft: de?.scrollLeft || 0,
-          deTop: de?.scrollTop || 0,
-          bodyLeft: body?.scrollLeft || 0,
-          bodyTop: body?.scrollTop || 0,
-          containerLeft: epubContainer?.scrollLeft || 0,
-          containerTop: epubContainer?.scrollTop || 0,
-        };
-        if (!scrollLockFrame) applyScrollLock();
-      };
-      const stopScrollLock = () => {
-        contents.window.clearTimeout(releaseLockTimer);
-        scrollLock = null;
-        if (scrollLockFrame) contents.window.cancelAnimationFrame(scrollLockFrame);
-        scrollLockFrame = 0;
-      };
-
-      // rAF 锁是"每帧查一次"，安卓拖选区时会挤压 iframe 的 rAF 调度，浏览器的
-      // 选区自动滚动能抢在两帧之间滚动 container（= 翻页）并完成绘制。
-      // 补一道事件驱动的同步回弹：scroll 事件发生在绘制前，当场按回锁定值。
-      // 注册在外层 container 上，换章时先摘旧的防叠加
-      if (epubContainer) {
-        if (epubContainer.__selLockRestore) {
-          epubContainer.removeEventListener('scroll', epubContainer.__selLockRestore);
-        }
-        const restoreContainer = () => {
-          if (!scrollLock) return; // 锁未激活时不干涉（epub.js 正常翻页也走 scroll）
-          epubContainer.scrollLeft = scrollLock.containerLeft;
-          epubContainer.scrollTop = scrollLock.containerTop;
-        };
-        epubContainer.__selLockRestore = restoreContainer;
-        epubContainer.addEventListener('scroll', restoreContainer, { passive: true });
-      }
-      const stopLockIfNoSelection = () => {
-        contents.window.clearTimeout(releaseLockTimer);
-        releaseLockTimer = contents.window.setTimeout(() => {
-          const sel = contents.window.getSelection();
-          if (!sel || !sel.toString().trim()) stopScrollLock();
-        }, 500);
-      };
-
-      // 触摸翻页和浏览器合成 click 分开处理。长按选词永远不能进入翻页逻辑。
-      let pointerDownTs = 0;
-      let suppressClickUntil = 0;
-      let lastTouchTs = 0;
-      let touchGesture = null;
-      const markPointerDown = () => {
-        pointerDownTs = Date.now();
-      };
-      const markPointerUp = () => {
-        if (pointerDownTs && Date.now() - pointerDownTs >= 350) {
-          suppressClickUntil = Date.now() + 1000;
-        }
-      };
-      contents.document.addEventListener('pointerdown', markPointerDown, true);
-      contents.document.addEventListener('pointerup', markPointerUp, true);
-      const navigateAt = (clientX) => {
-        const frameRect = contents.window.frameElement.getBoundingClientRect();
-        const x = frameRect.left + clientX;
-        const w = window.innerWidth;
-        if (x < w / 3) renditionRef.current?.prev();
-        else if (x > (w * 2) / 3) renditionRef.current?.next();
-        else toggleImmersive();
-      };
-      contents.document.addEventListener('touchstart', (e) => {
-        markPointerDown();
-        startScrollLock();
-        lastTouchTs = Date.now();
-        const t = e.touches[0];
-        touchGesture = t ? { started: Date.now(), x: t.clientX, y: t.clientY } : null;
-      }, { capture: true, passive: true });
-      contents.document.addEventListener('touchend', (e) => {
-        markPointerUp();
-        lastTouchTs = Date.now();
-        suppressClickUntil = Date.now() + 1000;
-        const start = touchGesture;
-        touchGesture = null;
-        const t = e.changedTouches[0];
-        if (!start || !t || Date.now() - start.started > 250) { stopLockIfNoSelection(); return; }
-        if (Math.hypot(t.clientX - start.x, t.clientY - start.y) > 12) { stopLockIfNoSelection(); return; }
-        const sel = contents.window.getSelection();
-        if (sel && sel.toString().trim()) return;
-        stopScrollLock();
-        navigateAt(t.clientX);
-      }, { capture: true, passive: true });
-      contents.document.addEventListener('contextmenu', () => {
-        suppressClickUntil = Date.now() + 1000;
-      }, true);
-
-      contents.document.addEventListener('selectionchange', () => {
-        const s = contents.window.getSelection();
-        if (s && s.toString().trim()) {
-          suppressClickUntil = Date.now() + 1000;
-        } else {
-          stopLockIfNoSelection();
-        }
-      });
-
-      // 翻页：iframe 内按可视区坐标判断（原透明覆盖层会挡住左右边缘的长按选词）。
-      // iframe 本身比屏幕宽（整章分栏），clientX 要加上 iframe 相对视口的偏移才是屏幕位置
-      contents.document.addEventListener('click', (e) => {
-        if (activeSelectionRef.current) return; // 操作栏可见时，这次点击只用于收起它
-        if (e.sourceCapabilities?.firesTouchEvents || Date.now() - lastTouchTs < 1500) return;
-        const pressDuration = pointerDownTs ? Date.now() - pointerDownTs : 0;
-        pointerDownTs = 0;
-        if (pressDuration >= 350 || Date.now() < suppressClickUntil) return;
-        const sel = contents.window.getSelection();
-        if (sel && sel.toString().trim()) return;
-        navigateAt(e.clientX);
-      });
-
-      let debounceTimer;
-      contents.document.addEventListener('selectionchange', () => {
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(() => {
-          const sel = contents.window.getSelection();
-          const text = sel.toString().trim();
-          if (!text || !sel.rangeCount) {
-            stopScrollLock();
-            setActiveSelection(null);
-            return;
-          }
-          epubSelectionContentsRef.current = contents;
-          const cfiRange = contents.cfiFromRange(sel.getRangeAt(0), SELECTION_CHUNK_CLASS);
-          const rect = sel.getRangeAt(0).getBoundingClientRect();
-          const iframeRect = contents.window.frameElement.getBoundingClientRect();
-          setActiveSelection({ text, format: 'epub', cfiRange, anchorX: iframeRect.left + rect.left + rect.width / 2, anchorY: iframeRect.top + rect.bottom });
-        }, 350);
-      });
-    });
-
-    const loc = currentBook.reading_location;
-    displayEpubCfi(loc || null).then(() => {
-      const initial = rendition.currentLocation();
-      if (initial && initial.start) lastLocationRef.current = initial.start.cfi;
-    });
-
-    rendition.on('relocated', (location) => {
-      const cfi = location.start.cfi;
-      lastLocationRef.current = cfi;
-      currentChapterRef.current = location.start.href || '';
-      if (book.locations.length()) {
-        setProgress(Math.round(book.locations.percentageFromCfi(cfi) * 100));
-      }
-      // 章内真实页码：displayed 来自当前章节的实际排版分页，每翻一次必定 +1；
-      // locations 是按字符数估的虚拟单位，只用来算全书百分比
-      const displayed = location.start.displayed;
-      if (displayed && displayed.total) {
-        setPageInfo({ current: displayed.page, total: displayed.total });
-      }
-    });
-
-    book.ready.then(() => {
-      setTocItems(book.navigation.toc);
-      return book.locations.generate(1024);
-    }).then(() => {
-      setEpubReady(true);
-    });
-
+    })();
 
     return () => {
-      document.removeEventListener('scroll', pinOuterAncestors, { capture: true });
-      if (renditionRef.current) renditionRef.current.destroy();
-      if (epubRef.current) epubRef.current.destroy();
-      renditionRef.current = null;
-      epubRef.current = null;
+      cancelled = true;
+      epubLoaderRef.current?.destroy();
+      epubLoaderRef.current = null;
+      setChapterHtml('');
+      setChapterIndex(0);
+      chapterIndexRef.current = 0;
+      setEpubReady(false);
     };
-  }, [readerOpen, currentBook?.id]);
+  }, [readerOpen, currentBook?.id, loadChapter]);
+
+  // 章节 HTML 落地（PagedReader 的子 effect 已完成分页测量）后应用待跳位置
+  useEffect(() => {
+    if (!chapterHtml || !pagedRef.current) return;
+    const loc = pendingLocRef.current;
+    pendingLocRef.current = null;
+    if (loc === 'last') pagedRef.current.goToLastPage();
+    else if (loc?.pos) pagedRef.current.goToAnchor(loc.pos);
+    else if (loc?.anchor) pagedRef.current.goToAnchor(loc.anchor.start);
+    updateProgressFromPage(pagedRef.current.getPage());
+  }, [chapterHtml]);
+
+  // 章尾/章首继续翻页 = 切章
+  const handleEdge = (dir) => {
+    const loader = epubLoaderRef.current;
+    if (!loader) return;
+    const c = chapterIndexRef.current;
+    if (dir === 'prev' && c > 0) loadChapter(c - 1, 'last');
+    if (dir === 'next' && c < loader.chapterCount - 1) loadChapter(c + 1, null);
+  };
+
+  const handleEpubSelection = (sel) => {
+    if (!sel) { setActiveSelection(null); return; }
+    setActiveSelection({ format: 'epub', ...sel });
+  };
 
   // ---- 陪读系统：阅读打点 + Elias 自己的划线批注（双色笔迹） ----
 
@@ -704,8 +479,7 @@ export default function ReadTab({ active, sessionId }) {
       const pos = Math.floor(bookContent.length * pct);
       return bookContent.slice(Math.max(0, pos - 1000), pos + 3000);
     }
-    const contents = renditionRef.current?.getContents?.()[0];
-    const text = contents?.document?.body?.innerText || '';
+    const text = pagedRef.current?.getText() || '';
     return text ? text.slice(0, 4000) : null;
   };
 
@@ -719,22 +493,10 @@ export default function ReadTab({ active, sessionId }) {
     return null;
   };
 
-  // 在 epub 当前章节里定位一段原文，返回 CFI（跨文本节点的句子找不到就放弃）
+  // 在 epub 当前章节里定位一段原文，返回定位串（找不到就放弃）
   const locateInEpub = (needle) => {
-    const contents = renditionRef.current?.getContents?.()[0];
-    if (!contents) return null;
-    const walker = contents.document.createTreeWalker(contents.document.body, NodeFilter.SHOW_TEXT);
-    let node;
-    while ((node = walker.nextNode())) {
-      const idx = (node.textContent || '').indexOf(needle);
-      if (idx >= 0) {
-        const range = contents.document.createRange();
-        range.setStart(node, idx);
-        range.setEnd(node, idx + needle.length);
-        return contents.cfiFromRange(range);
-      }
-    }
-    return null;
+    const anchor = pagedRef.current?.findText(needle);
+    return anchor ? serializeRangeLoc(chapterIndexRef.current, anchor) : null;
   };
 
   const runCompanionRead = async () => {
@@ -781,13 +543,7 @@ export default function ReadTab({ active, sessionId }) {
       });
       if (!saveRes.ok) continue;
       const saved = await saveRes.json();
-      setHighlights(prev => [...prev, saved]);
-      if (payload.format === 'epub' && renditionRef.current) {
-        renditionRef.current.annotations.add(
-          'underline', payload.cfi_range, {}, () => openHighlightRecall(saved), 'epub-underline-ai',
-          { stroke: AI_UNDERLINE_STROKE, 'stroke-width': '2px', 'stroke-opacity': '0.85' }
-        );
-      }
+      setHighlights(prev => [...prev, saved]); // 回显由 epubHighlights → PagedReader 自动完成
     }
   };
   runCompanionReadRef.current = runCompanionRead;
@@ -829,31 +585,29 @@ export default function ReadTab({ active, sessionId }) {
     setDiscussOpen(true);
   };
 
-  // epub 划线回显：普通划线是色块，带讨论的是下划线（可点击回看）
-  useEffect(() => {
-    if (!epubReady || !renditionRef.current) return;
-    highlights.filter(h => h.format === 'epub' && h.cfi_range).forEach(h => {
-      try {
-        if (h.author === 'ai') {
-          // Elias 的笔迹：淡青下划线，点击看他的批注
-          renditionRef.current.annotations.add(
-            'underline', h.cfi_range, {}, () => openHighlightRecall(h), 'epub-underline-ai',
-            { stroke: AI_UNDERLINE_STROKE, 'stroke-width': '2px', 'stroke-opacity': '0.85' }
-          );
-        } else if (h.has_discussion) {
-          renditionRef.current.annotations.add(
-            'underline', h.cfi_range, {}, () => openHighlightRecall(h), 'epub-underline-discussed',
-            { stroke: '#c98a98', 'stroke-width': '2px', 'stroke-opacity': '0.8' }
-          );
-        } else {
-          renditionRef.current.annotations.add(
-            'highlight', h.cfi_range, {}, undefined, 'txt-highlight-epub',
-            { fill: h.color, 'fill-opacity': '0.55', 'mix-blend-mode': 'multiply' }
-          );
-        }
-      } catch (err) { /* cfi 可能因版本差异失效，忽略单条 */ }
-    });
-  }, [epubReady, highlights]);
+  // epub 划线回显：交给 PagedReader（inline span，不触发重排）。
+  // Elias = 蓝下划线，有讨论 = 粉下划线，普通划线 = 色块。
+  // 新锚点(mk1)只画当前章节的；旧 CFI 划线退化为 selected_text 文本匹配。
+  const epubHighlights = useMemo(() => {
+    if (!currentBook || currentBook.format !== 'epub') return [];
+    return highlights
+      .filter(h => h.format === 'epub' && (h.cfi_range || h.selected_text))
+      .map(h => {
+        const parsed = parseLoc(h.cfi_range);
+        if (parsed && parsed.c !== chapterIndex) return null;
+        const clickable = h.has_discussion || h.author === 'ai';
+        return {
+          id: h.id,
+          anchor: parsed?.anchor || null,
+          textFallback: parsed ? null : h.selected_text,
+          // 她的笔迹一律粉系下划线（色点选的是深浅），Elias 一律蓝色下划线——同段重叠也分得清
+          className: h.author === 'ai' ? 'hl-ai-line' : 'hl-user-line',
+          style: h.author === 'ai' ? null : { textDecorationColor: underlineColorOf(h.color) },
+          onClick: clickable ? () => openHighlightRecall(h) : null,
+        };
+      })
+      .filter(Boolean);
+  }, [highlights, chapterIndex, currentBook]);
 
   useEffect(() => {
     if (!readerOpen || !currentBook || currentBook.format !== 'txt') return;
@@ -921,8 +675,7 @@ export default function ReadTab({ active, sessionId }) {
 
   const dismissSelection = () => {
     setActiveSelection(null);
-    if (currentBook?.format === 'txt') window.getSelection().removeAllRanges();
-    else if (epubSelectionContentsRef.current) epubSelectionContentsRef.current.window.getSelection().removeAllRanges();
+    window.getSelection()?.removeAllRanges(); // epub 和 txt 现在都在主文档里
   };
 
   const handleCopySelection = () => {
@@ -932,7 +685,7 @@ export default function ReadTab({ active, sessionId }) {
 
   const buildHighlightPayload = (sel, color) => {
     const payload = { format: sel.format, selected_text: sel.text, color, has_discussion: false };
-    if (sel.format === 'epub') payload.cfi_range = sel.cfiRange;
+    if (sel.format === 'epub') payload.cfi_range = serializeRangeLoc(chapterIndexRef.current, sel.anchor);
     else {
       payload.line_index = sel.lineIndex;
       payload.end_line_index = sel.endLineIndex;
@@ -954,12 +707,6 @@ export default function ReadTab({ active, sessionId }) {
       if (!res.ok) throw new Error(`保存划线失败 (${res.status})`);
       const saved = await res.json();
       setHighlights(prev => [...prev, saved]);
-      if (sel.format === 'epub' && renditionRef.current) {
-        renditionRef.current.annotations.add(
-          'highlight', sel.cfiRange, {}, undefined, 'txt-highlight-epub',
-          { fill: color, 'fill-opacity': '0.55', 'mix-blend-mode': 'multiply' }
-        );
-      }
     } catch (err) {
       console.error('Save highlight error:', err);
     }
@@ -967,10 +714,17 @@ export default function ReadTab({ active, sessionId }) {
   };
 
   const closeReader = () => {
-    if (renditionRef.current) renditionRef.current.destroy();
-    if (epubRef.current) epubRef.current.destroy();
-    renditionRef.current = null;
-    epubRef.current = null;
+    // 关书时把当前位置存成"最后阅读位置"（旧版只有加书签才存）
+    if (currentBook?.format === 'epub' && pagedRef.current) {
+      const a = pagedRef.current.getAnchor();
+      if (a) {
+        apiFetch(`${API}/api/books/${currentBook.id}/progress`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reading_progress: progress, reading_location: serializePosLoc(chapterIndexRef.current, a) }),
+        }).catch(() => {});
+      }
+    }
 
     setReaderOpen(false);
     setCurrentBook(null);
@@ -993,8 +747,9 @@ export default function ReadTab({ active, sessionId }) {
   };
 
   const handleTocClick = (item) => {
-    if (currentBook.format === 'epub' && renditionRef.current) {
-      renditionRef.current.display(item.href);
+    if (currentBook.format === 'epub' && epubLoaderRef.current) {
+      const idx = epubLoaderRef.current.hrefToIndex(item.href);
+      if (idx >= 0) loadChapter(idx, null);
     }
     setShowToc(false);
   };
@@ -1012,12 +767,7 @@ export default function ReadTab({ active, sessionId }) {
     } catch (err) {
       console.error('Save bg error:', err);
     }
-
-    if (renditionRef.current) {
-      renditionRef.current.themes.default({
-        body: { 'background': value }
-      });
-    }
+    // 新阅读器背景直接吃 readerBgStyle（state 变了自动重渲染），不用手动刷主题
   };
 
   const readerBgStyle = { backgroundColor: bgValue };
@@ -1062,10 +812,8 @@ export default function ReadTab({ active, sessionId }) {
               key={si}
               className={(seg.hl.discussed || seg.hl.isAi) ? 'txt-highlight txt-highlight-discussed' : 'txt-highlight'}
               style={seg.hl.isAi
-                ? { backgroundColor: seg.hl.color || AI_HIGHLIGHT_COLOR, borderBottom: `2px solid ${AI_UNDERLINE_STROKE}` }
-                : seg.hl.discussed
-                  ? { backgroundColor: 'transparent', borderBottom: `2px solid ${seg.hl.color || '#c98a98'}` }
-                  : { backgroundColor: seg.hl.color }}
+                ? { backgroundColor: 'transparent', borderBottom: `2px solid ${AI_UNDERLINE_STROKE}` }
+                : { backgroundColor: 'transparent', borderBottom: `2px solid ${underlineColorOf(seg.hl.color)}` }}
               data-highlight-id={seg.hl.id}
               onClick={(seg.hl.discussed || seg.hl.isAi) ? (e) => { e.stopPropagation(); openHighlightRecall(seg.hl.h); } : undefined}
             >
@@ -1128,12 +876,6 @@ export default function ReadTab({ active, sessionId }) {
             ai_reply: reply,
           };
           setHighlights(prev => [...prev, newHl]);
-          if (discussPassage.format === 'epub' && renditionRef.current) {
-            renditionRef.current.annotations.add(
-              'underline', discussPassage.cfiRange, {}, () => openHighlightRecall(newHl), 'epub-underline-discussed',
-              { stroke: '#c98a98', 'stroke-width': '2px', 'stroke-opacity': '0.8' }
-            );
-          }
         }
         setDiscussFirstTurnDone(true);
       } else {
@@ -1364,7 +1106,16 @@ export default function ReadTab({ active, sessionId }) {
 
           {currentBook.format === 'epub' && (
             <div className="epub-reader" style={readerBgStyle}>
-              <div ref={viewerRef} className="epub-viewer"></div>
+              <PagedReader
+                ref={pagedRef}
+                html={chapterHtml}
+                highlights={epubHighlights}
+                onPageChange={updateProgressFromPage}
+                onEdge={handleEdge}
+                onTapCenter={toggleImmersive}
+                onSelection={handleEpubSelection}
+                selectionActive={!!activeSelection}
+              />
             </div>
           )}
 
@@ -1404,7 +1155,7 @@ export default function ReadTab({ active, sessionId }) {
             }}>
               <button onClick={handleCopySelection}>复制</button>
               {HIGHLIGHT_COLORS.map(c => (
-                <button key={c} className="color-dot" style={{ background: c }} onClick={() => saveHighlight(c)} />
+                <button key={c} className="color-dot" style={{ background: underlineColorOf(c) }} onClick={() => saveHighlight(c)} />
               ))}
               <button onClick={openDiscuss}>写想法</button>
               <button onClick={dismissSelection}>✕</button>

@@ -2488,6 +2488,71 @@
   height: 100%;
 }
 
+/* ---- 无 iframe 分栏阅读器 ---- */
+.paged-reader {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  padding: 0 18px;
+  touch-action: manipulation;
+}
+
+.paged-reader-inner {
+  height: 100%;
+  padding: 14px 0;
+  box-sizing: border-box;
+  font-size: 17px;
+  line-height: 1.85;
+  color: #2c2c2c;
+  word-break: break-word;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.paged-reader-inner p,
+.paged-reader-inner li,
+.paged-reader-inner blockquote {
+  margin: 0 0 0.9em;
+  text-indent: 2em;
+}
+
+.paged-reader-inner h1, .paged-reader-inner h2, .paged-reader-inner h3,
+.paged-reader-inner h4, .paged-reader-inner h5, .paged-reader-inner h6 {
+  text-indent: 0;
+  line-height: 1.5;
+  margin: 0.6em 0;
+  break-after: avoid;
+}
+
+.paged-reader-inner img {
+  max-width: 100%;
+  max-height: 85vh;
+  object-fit: contain;
+  display: block;
+  margin: 0.5em auto;
+}
+
+/* 划线三态：她的色块 / 她的粉色下划线（有讨论）/ Elias 的蓝色下划线 */
+.hl-user-block {
+  border-radius: 2px;
+  padding: 1px 0;
+  mix-blend-mode: multiply;
+}
+
+.hl-user-line {
+  text-decoration: underline;
+  text-decoration-color: #c98a98;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+
+.hl-ai-line {
+  text-decoration: underline;
+  text-decoration-color: #8fa8c8;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+
 .reader-tap-zones {
   position: absolute;
   top: 0;
