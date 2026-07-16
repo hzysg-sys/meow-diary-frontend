@@ -167,21 +167,40 @@ const PagedReader = forwardRef(function PagedReader(
     getPage: () => ({ page: pageRef.current + 1, total: totalRef.current }),
     goToPage: (p) => applyPage(p),
     goToLastPage: () => applyPage(totalRef.current - 1),
-    // 当前页第一个可见字符的锚点
+    // 当前页第一个可见字符的锚点。
+    // 不用 caretRangeFromPoint：分栏 + transform 下探测点落在 padding 时会吸附到
+    // 完全不相干的段落（实测第四页取到第一页的段首）。改为确定性计算：
+    // 找第一个与当前页水平相交的段落，段内二分出第一个落进本页的字符。
     getAnchor: () => {
       const outer = outerRef.current;
-      if (!outer) return null;
+      const inner = innerRef.current;
+      if (!outer || !inner) return null;
       const r = outer.getBoundingClientRect();
-      const probes = [[r.left + 8, r.top + 24], [r.left + 8, r.top + r.height / 2], [r.left + 40, r.top + 24]];
-      for (const [x, y] of probes) {
-        const caret = document.caretRangeFromPoint?.(x, y);
-        const para = caret && paraOf(caret.startContainer);
-        if (para) return { p: parseInt(para.dataset.p, 10), o: offsetInPara(para, caret.startContainer, caret.startOffset) };
-      }
-      // 兜底：扫第一个右缘进入当前页的段落
-      const paras = outer.querySelectorAll('[data-p]');
-      for (const p of paras) {
-        if (p.getBoundingClientRect().right > r.left + 1) return { p: parseInt(p.dataset.p, 10), o: 0 };
+      const paras = inner.querySelectorAll('[data-p]');
+      for (const para of paras) {
+        const pr = para.getBoundingClientRect();
+        if (pr.right <= r.left + 2) continue; // 整段都在当前页左侧（前面的页）
+        const idx = parseInt(para.dataset.p, 10);
+        const len = (para.textContent || '').length;
+        // 段落起点就在本页（或本页之后），直接取段首
+        if (pr.left >= r.left - 2 || len === 0) return { p: idx, o: 0 };
+        // 段落从前页延续过来：二分找第一个 rect 进入本页的字符偏移
+        const rectAt = (off) => {
+          const pt = pointAt(para, off);
+          if (!pt) return null;
+          const rg = document.createRange();
+          rg.setStart(pt.node, pt.offset);
+          rg.setEnd(pt.node, Math.min(pt.offset + 1, pt.node.data.length));
+          return rg.getBoundingClientRect();
+        };
+        let lo = 0, hi = len - 1, ans = 0;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          const rc = rectAt(mid);
+          if (rc && rc.width + rc.height > 0 && rc.left >= r.left - 2) { ans = mid; hi = mid - 1; }
+          else lo = mid + 1;
+        }
+        return { p: idx, o: ans };
       }
       return null;
     },
