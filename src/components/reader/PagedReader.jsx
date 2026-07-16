@@ -114,7 +114,7 @@ function wrapRange(range, className, style, onClick, highlightId) {
 }
 
 const PagedReader = forwardRef(function PagedReader(
-  { html, highlights, onPageChange, onEdge, onTapCenter, onSelection, selectionActive },
+  { html, highlights, onPageChange, onEdge, onTapCenter, onSelection, onLink, selectionActive },
   ref
 ) {
   const outerRef = useRef(null);
@@ -129,7 +129,7 @@ const PagedReader = forwardRef(function PagedReader(
   const selectionActiveRef = useRef(false);
   selectionActiveRef.current = selectionActive;
   const cbRef = useRef({});
-  cbRef.current = { onPageChange, onEdge, onTapCenter, onSelection };
+  cbRef.current = { onPageChange, onEdge, onTapCenter, onSelection, onLink };
 
   const applyPage = useCallback((p, notify = true) => {
     const inner = innerRef.current;
@@ -230,7 +230,23 @@ const PagedReader = forwardRef(function PagedReader(
       return found ? found.anchor : null;
     },
     getText: () => innerRef.current?.innerText || '',
-  }), [applyPage, computeAnchor, goAnchor]);
+    // 跳到章内锚点元素（脚注、小节 id），返回是否找到
+    goToFragment: (fragId) => {
+      const inner = innerRef.current;
+      if (!inner || !fragId) return false;
+      const el = inner.querySelector(`#${CSS.escape(fragId)}`) ||
+                 inner.querySelector(`[name="${CSS.escape(fragId)}"]`);
+      if (!el) return false;
+      let rect = el.getBoundingClientRect();
+      // 空元素（纯锚点 <a id>）没有尺寸，用它后面最近的段落定位
+      if (!rect.width && !rect.height) {
+        const para = el.closest('[data-p]') || el.nextElementSibling?.closest?.('[data-p]');
+        if (para) rect = para.getBoundingClientRect();
+      }
+      applyPage(pageOfRect(rect));
+      return true;
+    },
+  }), [applyPage, computeAnchor, goAnchor, pageOfRect]);
 
   // ---- 渲染章节 + 标段落 + 分页 ----
   useEffect(() => {
@@ -380,6 +396,15 @@ const PagedReader = forwardRef(function PagedReader(
       }
     };
     const click = (e) => {
+      // 章节里的 <a>（脚注、交叉引用）不能走浏览器真实跳转——正文在主文档里，
+      // 相对路径会拼到站点域名上变成 404。拦下来交给宿主解析成章节内跳转。
+      const link = e.target.closest('a[href]');
+      if (link) {
+        e.preventDefault();
+        const href = link.getAttribute('href') || '';
+        if (!/^(https?:|mailto:)/i.test(href)) cbRef.current.onLink?.(href);
+        return;
+      }
       if (e.target.closest('[data-hl-id]')) return; // 点划线走划线自己的回调
       const pressDuration = pointerDownTsRef.current ? Date.now() - pointerDownTsRef.current : 0;
       pointerDownTsRef.current = 0;

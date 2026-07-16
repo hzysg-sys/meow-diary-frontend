@@ -2654,7 +2654,11 @@
 .discuss-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 0 16px;
+  padding: 4px 16px 8px;
+}
+/* 讨论面板里相邻气泡之间留呼吸感（聊天页有自己的间距体系，这里单独给） */
+.discuss-messages .msg-row + .msg-row {
+  margin-top: 16px;
 }
 .discuss-input-bar {
   display: flex;

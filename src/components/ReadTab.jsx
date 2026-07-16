@@ -458,6 +458,7 @@ export default function ReadTab({ active, sessionId }) {
     if (loc === 'last') pagedRef.current.goToLastPage();
     else if (loc?.pos) pagedRef.current.goToAnchor(loc.pos);
     else if (loc?.anchor) pagedRef.current.goToAnchor(loc.anchor.start);
+    else if (loc?.fragment) pagedRef.current.goToFragment(loc.fragment);
     updateProgressFromPage(pagedRef.current.getPage());
   }, [chapterHtml]);
 
@@ -473,6 +474,30 @@ export default function ReadTab({ active, sessionId }) {
   const handleEpubSelection = (sel) => {
     if (!sel) { setActiveSelection(null); return; }
     setActiveSelection({ format: 'epub', ...sel });
+  };
+
+  // 章节内 <a> 链接（脚注/交叉引用）：解析成 spine 章节 + 片段 id 跳转
+  const handleEpubLink = (href) => {
+    const loader = epubLoaderRef.current;
+    if (!loader || !href) return;
+    const [rawPath, frag] = href.split('#');
+    if (!rawPath) { // 纯 #fragment：本章内跳
+      if (frag) pagedRef.current?.goToFragment(frag);
+      return;
+    }
+    // 相对路径以当前章节所在目录为基准解析
+    const cur = currentChapterRef.current || '';
+    const dir = cur.includes('/') ? cur.slice(0, cur.lastIndexOf('/') + 1) : '';
+    let path;
+    try { path = decodeURIComponent(new URL(rawPath, `http://epub/${dir}`).pathname.slice(1)); }
+    catch { path = rawPath; }
+    const idx = loader.hrefToIndex(path);
+    if (idx < 0) return; // 不在书里的链接，忽略
+    if (idx === chapterIndexRef.current) {
+      if (frag) pagedRef.current?.goToFragment(frag);
+    } else {
+      loadChapter(idx, frag ? { fragment: frag } : null);
+    }
   };
 
   // ---- 陪读系统：阅读打点 + Elias 自己的划线批注（双色笔迹） ----
@@ -1123,6 +1148,7 @@ export default function ReadTab({ active, sessionId }) {
                 onEdge={handleEdge}
                 onTapCenter={toggleImmersive}
                 onSelection={handleEpubSelection}
+                onLink={handleEpubLink}
                 selectionActive={!!activeSelection}
               />
             </div>
