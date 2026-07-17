@@ -834,7 +834,11 @@ export default function ReadTab({ active, sessionId }) {
 
   const deleteHighlight = async (h) => {
     setHlMenu(null);
-    if (!confirm('删除这条划线？')) return;
+    const hasDiscussion = h.has_discussion || h.user_thought || h.ai_reply || h.author === 'ai';
+    const message = hasDiscussion
+      ? '删除这条划线及里面的全部讨论？删除后无法恢复。'
+      : '删除这条划线？';
+    if (!confirm(message)) return;
     try {
       const res = await apiFetch(`${API}/api/highlights/${h.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error(`删除失败 (${res.status})`);
