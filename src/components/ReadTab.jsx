@@ -535,7 +535,13 @@ export default function ReadTab({ active, sessionId }) {
         else if (saved && String(saved).startsWith('epubcfi(')) await loadChapter(legacyCfiChapter(saved), null);
         else await loadChapter(0, null);
 
-        loader.computeWeights().catch(() => {});
+        loader.computeWeights()
+          .then(() => {
+            if (!cancelled && epubLoaderRef.current === loader) {
+              updateProgressFromPage(pagedRef.current?.getPage());
+            }
+          })
+          .catch(() => {});
       } catch (err) {
         console.error('打开 epub 失败:', err);
       }
