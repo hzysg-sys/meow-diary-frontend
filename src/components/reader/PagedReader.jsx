@@ -11,6 +11,7 @@ const COLUMN_GAP = 32;
 const EDGE_ZONE = 30;       // 选区末端距页边多少像素内触发自动翻页
 const EDGE_DWELL_MS = 650;  // 贴边停留多久翻一页
 
+const EDGE_ZONE_Y = 52;
 // ---- 锚点工具 ----
 
 function paraOf(node) {
@@ -485,6 +486,61 @@ const PagedReader = forwardRef(function PagedReader(
 
     const clearEdgeTimer = () => { clearTimeout(edgeTimerRef.current); edgeTimerRef.current = 0; };
 
+    let bridgeRaf = 0;
+
+    // Keep the original selection anchor, but move its focus onto the newly visible page.
+    const bridgeSelection = (direction) => {
+      const live = window.getSelection();
+      const inner = innerRef.current;
+      if (!live?.rangeCount || !inner || !live.anchorNode || !live.focusNode) return;
+
+      const fromPage = pageRef.current;
+      const toPage = direction === 'next' ? fromPage + 1 : fromPage - 1;
+      if (toPage < 0 || toPage >= totalRef.current) return;
+
+      let target = direction === 'next'
+        ? anchorForPage(toPage)
+        : anchorForPage(fromPage);
+      if (!target) return;
+
+      if (direction === 'prev') {
+        if (target.o > 0) target = { p: target.p, o: target.o - 1 };
+        else if (target.p > 0) {
+          const previous = inner.querySelectorAll('[data-p]')[target.p - 1];
+          if (previous) target = { p: target.p - 1, o: Math.max(0, textOfPara(previous).length - 1) };
+        }
+      }
+
+      const baseNode = live.anchorNode;
+      const baseOffset = live.anchorOffset;
+      applyPage(toPage);
+      cancelAnimationFrame(bridgeRaf);
+      bridgeRaf = requestAnimationFrame(() => {
+        if (!baseNode.isConnected) return;
+        const para = inner.querySelectorAll('[data-p]')[target.p];
+        const point = para && pointAt(para, target.o);
+        if (!point) return;
+        try {
+          if (typeof live.setBaseAndExtent === 'function') {
+            live.setBaseAndExtent(baseNode, baseOffset, point.node, point.offset);
+          } else {
+            const bridged = document.createRange();
+            if (direction === 'next') {
+              bridged.setStart(baseNode, baseOffset);
+              bridged.setEnd(point.node, point.offset);
+            } else {
+              bridged.setStart(point.node, point.offset);
+              bridged.setEnd(baseNode, baseOffset);
+            }
+            live.removeAllRanges();
+            live.addRange(bridged);
+          }
+        } catch {
+          // Preserve the existing Range if Chromium is finishing its native handle gesture.
+        }
+      });
+    };
+
     const handler = () => {
       const sel = window.getSelection();
       const hasSel = sel && sel.rangeCount > 0 && sel.toString().trim() && outer.contains(sel.anchorNode);
@@ -502,14 +558,26 @@ const PagedReader = forwardRef(function PagedReader(
       // 贴边检测不等防抖：选区末端矩形贴近页缘，停留片刻就翻页，选区随连续 DOM 自然延伸
       clearEdgeTimer();
       if (hasSel) {
-        const rects = sel.getRangeAt(0).getClientRects();
+        const range = sel.getRangeAt(0);
+        const rects = range.getClientRects();
+        const first = rects[0];
         const last = rects[rects.length - 1];
         const outerRect = outer.getBoundingClientRect();
-        if (last) {
-          if (last.right > outerRect.right - EDGE_ZONE && pageRef.current < totalRef.current - 1) {
-            edgeTimerRef.current = setTimeout(() => applyPage(pageRef.current + 1), EDGE_DWELL_MS);
-          } else if (last.left < outerRect.left + EDGE_ZONE && pageRef.current > 0 && rects[0].left < outerRect.left + EDGE_ZONE) {
-            edgeTimerRef.current = setTimeout(() => applyPage(pageRef.current - 1), EDGE_DWELL_MS);
+        const focusAtStart = sel.focusNode === range.startContainer && sel.focusOffset === range.startOffset;
+        const focusRect = focusAtStart ? first : last;
+        if (focusRect) {
+          const nearNextEdge = !focusAtStart && (
+            focusRect.right > outerRect.right - EDGE_ZONE ||
+            focusRect.bottom > outerRect.bottom - EDGE_ZONE_Y
+          );
+          const nearPrevEdge = focusAtStart && (
+            focusRect.left < outerRect.left + EDGE_ZONE ||
+            focusRect.top < outerRect.top + EDGE_ZONE_Y
+          );
+          if (nearNextEdge && pageRef.current < totalRef.current - 1) {
+            edgeTimerRef.current = setTimeout(() => bridgeSelection('next'), EDGE_DWELL_MS);
+          } else if (nearPrevEdge && pageRef.current > 0) {
+            edgeTimerRef.current = setTimeout(() => bridgeSelection('prev'), EDGE_DWELL_MS);
           }
         }
       }
@@ -544,8 +612,9 @@ const PagedReader = forwardRef(function PagedReader(
       document.removeEventListener('selectionchange', handler);
       clearTimeout(selDebounceRef.current);
       clearEdgeTimer();
+      cancelAnimationFrame(bridgeRaf);
     };
-  }, [applyPage]);
+  }, [applyPage, anchorForPage]);
 
   // ---- 点按翻页（左/右 1/3）与中央呼出菜单；长按选词永不触发翻页 ----
   useEffect(() => {
