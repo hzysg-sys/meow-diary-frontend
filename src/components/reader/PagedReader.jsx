@@ -460,12 +460,16 @@ const PagedReader = forwardRef(function PagedReader(
     const handler = () => {
       const sel = window.getSelection();
       const hasSel = sel && sel.rangeCount > 0 && sel.toString().trim() && outer.contains(sel.anchorNode);
-      if (hasSel) suppressClickUntilRef.current = Date.now() + 1000;
+      if (hasSel) {
+        suppressClickUntilRef.current = Date.now() + 1000;
 
-      // 注意：绝不能在这里用 setBaseAndExtent 之类去"矫正"选区——
-      // 原生手柄拖选进行中被程序改选区，安卓会直接终止拖选（手柄消失）。
-      // 选区跑偏（碰到操作栏暴涨到章尾）的正解在 CSS：正文以外一律
-      // user-select:none，浏览器自然把终点落回正文里手指最近的位置。
+        // Hide the stale action bar as soon as a native handle moves again.
+        // The debounce below restores it at the new range after movement stops.
+        if (selectionActiveRef.current) cbRef.current.onSelection?.(null);
+      }
+
+      // Never rebuild or correct the native Range while a handle is moving:
+      // Android treats that mutation as the end of the selection gesture.
 
       // 贴边检测不等防抖：选区末端矩形贴近页缘，停留片刻就翻页，选区随连续 DOM 自然延伸
       clearEdgeTimer();

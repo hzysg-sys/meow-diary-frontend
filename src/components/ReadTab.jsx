@@ -904,7 +904,15 @@ export default function ReadTab({ active, sessionId }) {
     const handler = () => {
       // 划选时间戳先记（不等防抖），供 handleTxtClick 判断"这次点击是不是选词余波"
       const rawSel = window.getSelection();
-      if (rawSel && rawSel.toString().trim()) lastTxtSelTsRef.current = Date.now();
+      if (rawSel && rawSel.toString().trim()) {
+        lastTxtSelTsRef.current = Date.now();
+
+        // Hide the stale action bar while a native selection handle is moving.
+        if (activeSelectionRef.current) {
+          activeSelectionRef.current = null;
+          setActiveSelection(null);
+        }
+      }
       clearTimeout(timer);
       timer = setTimeout(() => {
         const sel = window.getSelection();
