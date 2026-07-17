@@ -470,6 +470,19 @@ const PagedReader = forwardRef(function PagedReader(
       const hasSel = sel && sel.rangeCount > 0 && sel.toString().trim() && outer.contains(sel.anchorNode);
       if (hasSel) suppressClickUntilRef.current = Date.now() + 1000;
 
+      // 越界矫正（主犯）：选区下方会浮出操作栏（复制/写想法），拖选时手指
+      // 几乎必然碰到它——操作栏不在正文容器里，焦点一旦落进去，选区就会
+      // 覆盖"起点到操作栏之间的一切"= 暴涨到页尾。焦点跑出正文立刻按回。
+      if (hasSel && !outer.contains(sel.focusNode)) {
+        const prev = phantomRef.current;
+        if (prev && sel.anchorNode === prev.anchorNode && sel.anchorOffset === prev.anchorOffset) {
+          try {
+            sel.setBaseAndExtent(sel.anchorNode, sel.anchorOffset, prev.node, prev.offset);
+          } catch { /* 结点已失效，放弃矫正 */ }
+        }
+        return;
+      }
+
       // 幽灵吸附矫正：触屏往下拖选时手指低过分栏底部，Chrome 会把选区终点
       // 吸附到"本页最后一个字"（往上拖则吸到页首），松一点又弹回——选区上下乱窜。
       // 识别特征：锚点没变（还在拖同一个选区）+ 终点单次跳变很大 + 落点恰好是页首/页末。

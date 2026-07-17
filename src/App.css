@@ -2800,6 +2800,9 @@
   position: fixed;
   transform: translateX(-50%);
   z-index: 300;
+  /* 拖选手指扫过操作栏时，禁止浏览器把选区焦点放进栏内文字 */
+  -webkit-user-select: none;
+  user-select: none;
   display: flex;
   align-items: center;
   gap: 8px;
