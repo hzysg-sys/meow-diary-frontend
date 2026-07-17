@@ -21,7 +21,6 @@ const parseLoc = (str) => {
 const legacyCfiChapter = (cfi) => {
   try { return Math.max(0, new EpubCFI(cfi).spinePos); } catch { return 0; }
 };
-import Avatar from './Avatar';
 import TypingIndicator from './TypingIndicator';
 import { discussBookPassage, fetchAnnotationDiscussion, discussAnnotation, apiFetch } from '../api';
 
@@ -120,6 +119,7 @@ export default function ReadTab({ active, sessionId }) {
   const [discussInput, setDiscussInput] = useState('');
   const [discussTurns, setDiscussTurns] = useState([]);
   const [discussLoading, setDiscussLoading] = useState(false);
+  const [discussReplying, setDiscussReplying] = useState(false);
   const [discussHighlightId, setDiscussHighlightId] = useState(null);
 
   const epubLoaderRef = useRef(null);
@@ -784,6 +784,7 @@ export default function ReadTab({ active, sessionId }) {
     setDiscussHighlightId(h.id);
     setDiscussFull(false);
     setDiscussOpen(true);
+    setDiscussReplying(false);
     setDiscussLoading(true);
     try {
       const data = await fetchAnnotationDiscussion(h.id);
@@ -1210,6 +1211,8 @@ export default function ReadTab({ active, sessionId }) {
     setDiscussHighlightId(null);
     setDiscussFull(false);
     setDiscussOpen(true);
+    setDiscussLoading(false);
+    setDiscussReplying(false);
     dismissSelection();
   };
 
@@ -1220,6 +1223,8 @@ export default function ReadTab({ active, sessionId }) {
     setDiscussPassage(null);
     setDiscussTurns([]);
     setDiscussHighlightId(null);
+    setDiscussLoading(false);
+    setDiscussReplying(false);
   };
 
   const handleDiscussSend = async () => {
@@ -1228,6 +1233,7 @@ export default function ReadTab({ active, sessionId }) {
     setDiscussInput('');
     setDiscussTurns(prev => [...prev, { role: 'user', content: text }]);
     setDiscussLoading(true);
+    setDiscussReplying(true);
     try {
       let sid = sessionId;
       if (!sid || Number.isNaN(sid)) {
@@ -1268,6 +1274,7 @@ export default function ReadTab({ active, sessionId }) {
       setDiscussTurns(prev => [...prev, { role: 'assistant', content: 'Elias 走神了，再试一次吧' }]);
     } finally {
       setDiscussLoading(false);
+      setDiscussReplying(false);
     }
   };
 
@@ -1636,11 +1643,10 @@ export default function ReadTab({ active, sessionId }) {
               <div className="discuss-messages">
                 {discussTurns.map((t, i) => (
                   <div key={i} className={`msg-row ${t.role}`}>
-                    {t.role === 'assistant' && <Avatar role="assistant" />}
                     <div className="msg-wrap"><div className="bubble">{t.content}</div></div>
                   </div>
                 ))}
-                {discussLoading && <TypingIndicator />}
+                {discussReplying && <TypingIndicator />}
               </div>
               <div className="discuss-input-bar">
                 <textarea
