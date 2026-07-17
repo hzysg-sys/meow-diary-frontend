@@ -838,13 +838,15 @@ export default function ReadTab({ active, sessionId }) {
     const message = hasDiscussion
       ? '删除这条划线及里面的全部讨论？删除后无法恢复。'
       : '删除这条划线？';
-    if (!confirm(message)) return;
+    if (!confirm(message)) return false;
     try {
       const res = await apiFetch(`${API}/api/highlights/${h.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error(`删除失败 (${res.status})`);
       setHighlights(prev => prev.filter(x => x.id !== h.id));
+      return true;
     } catch (err) {
       console.error('删除划线失败:', err);
+      return false;
     }
   };
 
@@ -1229,6 +1231,12 @@ export default function ReadTab({ active, sessionId }) {
     setDiscussHighlightId(null);
     setDiscussLoading(false);
     setDiscussReplying(false);
+  };
+
+  const deleteOpenDiscussion = async () => {
+    const highlight = highlights.find(h => h.id === discussHighlightId);
+    if (!highlight) return;
+    if (await deleteHighlight(highlight)) closeDiscuss();
   };
 
   const handleDiscussSend = async () => {
@@ -1641,7 +1649,12 @@ export default function ReadTab({ active, sessionId }) {
                   {discussFull ? '⌄' : '⌃'}
                 </button>
                 <span className="discuss-panel-title">和 Elias 聊聊这段</span>
-                <button className="discuss-close-btn" onClick={closeDiscuss}>✕</button>
+                <div className="discuss-header-actions">
+                  {discussHighlightId && (
+                    <button className="discuss-delete-btn" onClick={deleteOpenDiscussion}>删除</button>
+                  )}
+                  <button className="discuss-close-btn" onClick={closeDiscuss}>✕</button>
+                </div>
               </div>
               <div className="discuss-passage-quote">「{discussPassage?.text}」</div>
               <div className="discuss-messages">
