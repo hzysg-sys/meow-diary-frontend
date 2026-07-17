@@ -2447,6 +2447,82 @@
   box-shadow: 0 14px 30px rgba(0,0,0,0.14);
 }
 
+/* ---- 自定义图片阅读背景 ---- */
+/* 底图层 + 蒙版层垫在正文之下；图层向外扩一圈，模糊时边缘不露白 */
+.reader-custom-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  z-index: 0;
+  pointer-events: none;
+}
+.reader-custom-bg-img {
+  position: absolute;
+  inset: -32px;
+  background-size: cover;
+  background-position: center;
+}
+.reader-custom-bg-overlay {
+  position: absolute;
+  inset: 0;
+}
+/* 正文和 UI 抬到背景层之上（reader-panels 自带 z-index:150，不要在这里覆盖） */
+.reader-header, .epub-reader, .txt-reader, .reader-footer, .companion-note {
+  position: relative;
+  z-index: 1;
+}
+
+.bg-custom-title {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(0,0,0,0.05);
+}
+.bg-custom-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.bg-custom-thumb {
+  width: 56px;
+  height: 40px;
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-size: cover;
+  background-position: center;
+  padding: 0;
+}
+.bg-custom-thumb.active {
+  border-color: #c98a98;
+}
+.bg-upload-btn {
+  background: #f5dee3;
+  border: none;
+  border-radius: 14px;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: #57534e;
+}
+.bg-sliders {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.bg-sliders label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: #8a8580;
+}
+.bg-sliders label span {
+  min-width: 84px;
+}
+.bg-sliders input[type="range"] {
+  flex: 1;
+  accent-color: #c98a98;
+}
+
 .bg-panel-title {
   font-size: 13px;
   color: #999;

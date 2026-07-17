@@ -92,6 +92,11 @@ export default function ReadTab({ active, sessionId }) {
   const [bgType, setBgType] = useState('preset');
   const [bgValue, setBgValue] = useState('#f9f3ec');
   const [showBgPanel, setShowBgPanel] = useState(false);
+  // 自定义图片背景 {url, overlay(0-0.95 蒙版透明度), blur(px)}；readerBgValue 里存 JSON
+  const [customBg, setCustomBg] = useState(null);
+  const [bgUploading, setBgUploading] = useState(false);
+  const bgFileInputRef = useRef(null);
+  const bgSaveTimerRef = useRef(0);
 
   const [immersive, setImmersive] = useState(false);
   const [showToc, setShowToc] = useState(false);
@@ -174,8 +179,19 @@ export default function ReadTab({ active, sessionId }) {
       const res = await apiFetch(`${API}/api/settings`);
       if (!res.ok) throw new Error(`加载阅读背景失败 (${res.status})`);
       const data = await res.json();
-      if (data.readerBgType && data.readerBgType !== 'custom') setBgType(data.readerBgType);
-      if (data.readerBgValue && data.readerBgType !== 'custom') setBgValue(data.readerBgValue);
+      if (data.readerBgType === 'custom' && data.readerBgValue) {
+        // 新格式是 JSON {url, overlay, blur}；旧数据可能是裸 URL，给默认参数
+        let parsed = null;
+        try { parsed = data.readerBgValue.startsWith('{') ? JSON.parse(data.readerBgValue) : null; } catch { /* 当旧格式处理 */ }
+        if (!parsed) parsed = { url: data.readerBgValue, overlay: 0.65, blur: 8 };
+        if (parsed.url) {
+          setCustomBg(parsed);
+          setBgType('custom');
+        }
+      } else if (data.readerBgType && data.readerBgValue) {
+        setBgType(data.readerBgType);
+        setBgValue(data.readerBgValue);
+      }
     } catch (err) {
       console.error('Load bg settings error:', err);
     }
@@ -986,7 +1002,62 @@ export default function ReadTab({ active, sessionId }) {
     // 新阅读器背景直接吃 readerBgStyle（state 变了自动重渲染），不用手动刷主题
   };
 
-  const readerBgStyle = { backgroundColor: bgValue };
+  // 自定义图片背景：立即生效，落库防抖（拖滑杆时不连环发请求）
+  const saveCustomBg = (next) => {
+    setCustomBg(next);
+    setBgType('custom');
+    clearTimeout(bgSaveTimerRef.current);
+    bgSaveTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await apiFetch(`${API}/api/settings`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ readerBgType: 'custom', readerBgValue: JSON.stringify(next) }),
+        });
+        if (!res.ok) throw new Error(`保存背景失败 (${res.status})`);
+      } catch (err) {
+        console.error('Save custom bg error:', err);
+      }
+    }, 600);
+  };
+
+  // 背景图上传：canvas 压到 1600px 内再传，省流量也省 Storage
+  const handleBgFileSelect = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setBgUploading(true);
+    try {
+      const blob = await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+          const scale = Math.min(1, 1600 / Math.max(img.width, img.height));
+          const canvas = document.createElement('canvas');
+          canvas.width = Math.round(img.width * scale);
+          canvas.height = Math.round(img.height * scale);
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          canvas.toBlob(b => (b ? resolve(b) : reject(new Error('压缩失败'))), 'image/jpeg', 0.85);
+        };
+        img.onerror = () => reject(new Error('图片读取失败'));
+        img.src = URL.createObjectURL(file);
+      });
+      const formData = new FormData();
+      formData.append('file', blob, 'bg.jpg');
+      const res = await apiFetch(`${API}/api/books/reader-bg`, { method: 'POST', body: formData });
+      const data = await res.json();
+      if (!res.ok || !data.url) throw new Error(data.error || `上传失败 (${res.status})`);
+      saveCustomBg({ url: data.url, overlay: customBg?.overlay ?? 0.65, blur: customBg?.blur ?? 8 });
+    } catch (err) {
+      console.error('Upload bg error:', err);
+      alert('背景上传失败: ' + err.message);
+    } finally {
+      setBgUploading(false);
+      if (bgFileInputRef.current) bgFileInputRef.current.value = '';
+    }
+  };
+
+  const usingCustomBg = bgType === 'custom' && !!customBg?.url;
+  // 自定义图片模式下正文容器透明，露出底下的图片层
+  const readerBgStyle = usingCustomBg ? { backgroundColor: 'transparent' } : { backgroundColor: bgValue };
 
   // 划线分段渲染
   const getLineSegments = (lineIndex, lineText) => {
@@ -1257,7 +1328,19 @@ export default function ReadTab({ active, sessionId }) {
 
       {/* 阅读器视图 */}
       {readerOpen && currentBook && (
-        <div className={`reader-container ${immersive ? 'reader-immersive' : ''}`} style={{ backgroundColor: bgValue }}>
+        <div className={`reader-container ${immersive ? 'reader-immersive' : ''}`} style={{ backgroundColor: usingCustomBg ? '#f9f3ec' : bgValue }}>
+          {usingCustomBg && (
+            <div className="reader-custom-bg" aria-hidden="true">
+              <div
+                className="reader-custom-bg-img"
+                style={{ backgroundImage: `url(${customBg.url})`, filter: `blur(${customBg.blur || 0}px)` }}
+              />
+              <div
+                className="reader-custom-bg-overlay"
+                style={{ backgroundColor: `rgba(249, 243, 236, ${customBg.overlay ?? 0.65})` }}
+              />
+            </div>
+          )}
           <div className={`reader-header ${immersive ? 'reader-header-hidden' : ''}`}>
             <button className="reader-back-btn" onClick={closeReader}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1348,6 +1431,43 @@ export default function ReadTab({ active, sessionId }) {
                   </button>
                 ))}
               </div>
+
+              <div className="bg-panel-title bg-custom-title">自定义图片</div>
+              <div className="bg-custom-row">
+                {customBg?.url && (
+                  <button
+                    type="button"
+                    className={`bg-custom-thumb ${usingCustomBg ? 'active' : ''}`}
+                    style={{ backgroundImage: `url(${customBg.url})` }}
+                    onClick={() => saveCustomBg(customBg)}
+                    aria-label="使用这张背景图"
+                  />
+                )}
+                <button className="bg-upload-btn" onClick={() => bgFileInputRef.current?.click()} disabled={bgUploading}>
+                  {bgUploading ? '上传中...' : customBg?.url ? '换一张' : '上传图片'}
+                </button>
+              </div>
+              {usingCustomBg && (
+                <div className="bg-sliders">
+                  <label>
+                    <span>透明度 {Math.round((customBg.overlay ?? 0.65) * 100)}%</span>
+                    <input
+                      type="range" min="0" max="95" step="5"
+                      value={Math.round((customBg.overlay ?? 0.65) * 100)}
+                      onChange={(e) => saveCustomBg({ ...customBg, overlay: Number(e.target.value) / 100 })}
+                    />
+                  </label>
+                  <label>
+                    <span>模糊 {customBg.blur ?? 0}px</span>
+                    <input
+                      type="range" min="0" max="24" step="1"
+                      value={customBg.blur ?? 0}
+                      onChange={(e) => saveCustomBg({ ...customBg, blur: Number(e.target.value) })}
+                    />
+                  </label>
+                </div>
+              )}
+              <input type="file" accept="image/*" ref={bgFileInputRef} style={{ display: 'none' }} onChange={handleBgFileSelect} />
             </div>
           )}
           </div>
