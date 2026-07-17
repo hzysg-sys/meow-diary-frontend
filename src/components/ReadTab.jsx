@@ -505,7 +505,10 @@ export default function ReadTab({ active, sessionId }) {
     const loader = epubLoaderRef.current;
     if (!loader) return;
     const c = chapterIndexRef.current;
-    const frac = pg.total ? pg.page / pg.total : 0;
+    const textProgress = pagedRef.current?.getTextProgress?.();
+    const frac = textProgress?.total
+      ? Math.max(0, Math.min(1, textProgress.offset / textProgress.total))
+      : (pg.total ? Math.max(0, (pg.page - 1) / pg.total) : 0);
     const w = loader.weights;
     if (w && w.length === loader.chapterCount) {
       const totalW = w.reduce((a, b) => a + b, 0) || 1;

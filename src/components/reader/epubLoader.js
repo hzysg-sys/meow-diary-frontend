@@ -116,9 +116,12 @@ export async function openEpub(fileUrl) {
       const w = [];
       for (let i = 0; i < spineItems.length; i += 1) {
         try {
-          const length = await withLoadedItem(i, (item) =>
-            (item.document?.body?.textContent || '').length || 1
-          );
+          const length = await withLoadedItem(i, (item) => {
+            const srcBody = item.document?.body;
+            if (!srcBody) return 1;
+            const body = sanitizeChapterBody(srcBody.cloneNode(true));
+            return (body.textContent || '').length || 1;
+          });
           w.push(length);
         } catch {
           w.push(1);

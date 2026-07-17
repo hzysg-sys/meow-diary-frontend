@@ -63,6 +63,28 @@ function pointAt(para, offset) {
   return last ? { node: last, offset: last.data.length } : null;
 }
 
+// Convert the stable paragraph anchor into a source-text offset for progress.
+// Annotation bars are excluded by textWalkerFor, so reflow can change page
+// numbers without changing this value.
+function textProgressAtAnchor(container, anchor) {
+  if (!container || !anchor) return null;
+  const paras = container.querySelectorAll('[data-p]');
+  const para = paras[anchor.p];
+  if (!para) return null;
+  const point = pointAt(para, anchor.o || 0);
+  if (!point) return null;
+
+  const walker = textWalkerFor(container);
+  let total = 0;
+  let offset = null;
+  let node;
+  while ((node = walker.nextNode())) {
+    if (node === point.node) offset = total + Math.min(point.offset, node.data.length);
+    total += node.data.length;
+  }
+  return { offset: offset ?? 0, total };
+}
+
 function anchorToRange(container, start, end) {
   const paras = container.querySelectorAll('[data-p]');
   const sp = paras[start.p];
@@ -241,6 +263,11 @@ const PagedReader = forwardRef(function PagedReader(
     return computeAnchorAt(r.left + (pageIdx - pageRef.current) * stepRef.current);
   }, [computeAnchorAt]);
 
+  const computeTextProgress = useCallback(() => {
+    const inner = innerRef.current;
+    return textProgressAtAnchor(inner, computeAnchor());
+  }, [computeAnchor]);
+
   const goAnchor = useCallback((a) => {
     const container = innerRef.current;
     if (!container || !a) return;
@@ -262,6 +289,7 @@ const PagedReader = forwardRef(function PagedReader(
   useImperativeHandle(ref, () => ({
     getPage: () => ({ page: pageRef.current + 1, total: totalRef.current }),
     goToPage: (p) => applyPage(p),
+    getTextProgress: computeTextProgress,
     goToLastPage: () => applyPage(totalRef.current - 1),
     getAnchor: computeAnchor,
     goToAnchor: goAnchor,
@@ -332,7 +360,7 @@ const PagedReader = forwardRef(function PagedReader(
       applyPage(pageOfRect(rect));
       return true;
     },
-  }), [applyPage, computeAnchor, goAnchor, pageOfRect, anchorForPage]);
+  }), [applyPage, computeAnchor, computeTextProgress, goAnchor, pageOfRect, anchorForPage]);
 
   // ---- 渲染章节 + 标段落 + 分页 ----
   useEffect(() => {
