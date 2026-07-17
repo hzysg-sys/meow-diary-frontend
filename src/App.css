@@ -2472,6 +2472,32 @@
   z-index: 1;
 }
 
+/* ---- 选区安全域 ----
+   阅读器里"可被选中"的只有书的正文。拖选手指扫过操作栏/页眉/页脚/批注条时，
+   浏览器在这些区域找不到可选中的落点，会把选区终点放回正文里离手指最近的
+   位置——不跳章尾、不断手柄。
+   ⚠️ 千万不要改成"程序矫正选区"：原生手柄拖动中被代码改选区，安卓会直接
+   终止拖选（手柄消失），实测踩过。 */
+.reader-container {
+  -webkit-user-select: none;
+  user-select: none;
+}
+.paged-reader-inner,
+.txt-reader .txt-content {
+  -webkit-user-select: text;
+  user-select: text;
+}
+/* 正文流里的批注条不是书的文字，选区不该进去 */
+.paged-reader-inner [data-reader-annotation] {
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* 讨论面板和脚注弹窗里的文字允许复制 */
+.discuss-panel, .footnote-pop-body {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .bg-custom-title {
   margin-top: 14px;
   padding-top: 12px;
@@ -2800,9 +2826,6 @@
   position: fixed;
   transform: translateX(-50%);
   z-index: 300;
-  /* 拖选手指扫过操作栏时，禁止浏览器把选区焦点放进栏内文字 */
-  -webkit-user-select: none;
-  user-select: none;
   display: flex;
   align-items: center;
   gap: 8px;

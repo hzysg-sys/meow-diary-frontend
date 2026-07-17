@@ -150,7 +150,6 @@ const PagedReader = forwardRef(function PagedReader(
   const stepRef = useRef(1);
   const edgeTimerRef = useRef(0);
   const selDebounceRef = useRef(0);
-  const phantomRef = useRef(null); // 幽灵吸附矫正：上一个真实的选区终点
   const suppressClickUntilRef = useRef(0);
   const pointerDownTsRef = useRef(0);
   const htmlChangedRef = useRef(false);
@@ -458,59 +457,15 @@ const PagedReader = forwardRef(function PagedReader(
 
     const clearEdgeTimer = () => { clearTimeout(edgeTimerRef.current); edgeTimerRef.current = 0; };
 
-    // (focusNode, focusOffset) -> 全局字符序（段落序号 × 1e5 + 段内偏移）
-    const focusPos = (sel) => {
-      const para = paraOf(sel.focusNode);
-      if (!para) return null;
-      return parseInt(para.dataset.p, 10) * 100000 + offsetInPara(para, sel.focusNode, sel.focusOffset);
-    };
-
     const handler = () => {
       const sel = window.getSelection();
       const hasSel = sel && sel.rangeCount > 0 && sel.toString().trim() && outer.contains(sel.anchorNode);
       if (hasSel) suppressClickUntilRef.current = Date.now() + 1000;
 
-      // 越界矫正（主犯）：选区下方会浮出操作栏（复制/写想法），拖选时手指
-      // 几乎必然碰到它——操作栏不在正文容器里，焦点一旦落进去，选区就会
-      // 覆盖"起点到操作栏之间的一切"= 暴涨到页尾。焦点跑出正文立刻按回。
-      if (hasSel && !outer.contains(sel.focusNode)) {
-        const prev = phantomRef.current;
-        if (prev && sel.anchorNode === prev.anchorNode && sel.anchorOffset === prev.anchorOffset) {
-          try {
-            sel.setBaseAndExtent(sel.anchorNode, sel.anchorOffset, prev.node, prev.offset);
-          } catch { /* 结点已失效，放弃矫正 */ }
-        }
-        return;
-      }
-
-      // 幽灵吸附矫正：触屏往下拖选时手指低过分栏底部，Chrome 会把选区终点
-      // 吸附到"本页最后一个字"（往上拖则吸到页首），松一点又弹回——选区上下乱窜。
-      // 识别特征：锚点没变（还在拖同一个选区）+ 终点单次跳变很大 + 落点恰好是页首/页末。
-      // 命中就把终点按回上一个真实位置，让选区只听手指的。
-      if (hasSel) {
-        const prev = phantomRef.current;
-        const pos = focusPos(sel);
-        const sameAnchor = prev && sel.anchorNode === prev.anchorNode && sel.anchorOffset === prev.anchorOffset;
-        if (pos != null && sameAnchor && Math.abs(pos - prev.pos) > 120) {
-          const pageStart = computeAnchor();
-          const nextStart = anchorForPage(pageRef.current + 1);
-          const startPos = pageStart ? pageStart.p * 100000 + pageStart.o : null;
-          const endPos = nextStart ? nextStart.p * 100000 + nextStart.o : null;
-          const snapToEnd = pos > prev.pos && endPos != null && Math.abs(pos - endPos) <= 3;
-          const snapToStart = pos < prev.pos && startPos != null && pos <= startPos + 3;
-          if (snapToEnd || snapToStart) {
-            try {
-              sel.setBaseAndExtent(sel.anchorNode, sel.anchorOffset, prev.node, prev.offset);
-            } catch { /* 结点已被重绘换掉，放弃这次矫正 */ }
-            return; // 矫正自身会再触发一次 selectionchange，由下一轮继续
-          }
-        }
-        if (pos != null) {
-          phantomRef.current = { anchorNode: sel.anchorNode, anchorOffset: sel.anchorOffset, node: sel.focusNode, offset: sel.focusOffset, pos };
-        }
-      } else {
-        phantomRef.current = null;
-      }
+      // 注意：绝不能在这里用 setBaseAndExtent 之类去"矫正"选区——
+      // 原生手柄拖选进行中被程序改选区，安卓会直接终止拖选（手柄消失）。
+      // 选区跑偏（碰到操作栏暴涨到章尾）的正解在 CSS：正文以外一律
+      // user-select:none，浏览器自然把终点落回正文里手指最近的位置。
 
       // 贴边检测不等防抖：选区末端矩形贴近页缘，停留片刻就翻页，选区随连续 DOM 自然延伸
       clearEdgeTimer();
@@ -558,7 +513,7 @@ const PagedReader = forwardRef(function PagedReader(
       clearTimeout(selDebounceRef.current);
       clearEdgeTimer();
     };
-  }, [applyPage, computeAnchor, anchorForPage]);
+  }, [applyPage]);
 
   // ---- 点按翻页（左/右 1/3）与中央呼出菜单；长按选词永不触发翻页 ----
   useEffect(() => {
