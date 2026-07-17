@@ -1,7 +1,8 @@
-import { Fragment, useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import ePub, { EpubCFI } from 'epubjs';
 import PagedReader from './reader/PagedReader';
 import { openEpub } from './reader/epubLoader';
+import { openTxt } from './reader/txtLoader';
 
 // epub 定位串（存在 cfi_range / cfi / reading_location 这几个 text 列里）：
 // 新格式 "mk1:{...}"，旧数据是 "epubcfi(...)"。旧划线靠 selected_text 文本匹配回显，
@@ -56,8 +57,6 @@ const UNDERLINE_COLORS = {
 const underlineColorOf = (c) => UNDERLINE_COLORS[c] || '#c98a98';
 
 // Elias 的笔迹色（淡青蓝，与用户的胭脂粉区分）
-const AI_HIGHLIGHT_COLOR = '#dce7f2';
-const AI_UNDERLINE_STROKE = '#8fa8c8';
 // ==== M4 共读参数 ====
 const READ_DWELL_MS = 15000;    // 页面停留满 15 秒才算"真正读过"（防剧透边界的确认阈值）
 const READ_FLUSH_MS = 30000;    // 已读页最迟 30 秒批量上报一次
@@ -84,8 +83,6 @@ export default function ReadTab({ active, sessionId }) {
 
   const [currentBook, setCurrentBook] = useState(null);
   const [readerOpen, setReaderOpen] = useState(false);
-  const [bookContent, setBookContent] = useState('');
-  const [chapterTitle, setChapterTitle] = useState('');
   const [progress, setProgress] = useState(0);
 
   const [bgType, setBgType] = useState('preset');
@@ -111,7 +108,7 @@ export default function ReadTab({ active, sessionId }) {
   const [footnotePop, setFootnotePop] = useState(null); // 脚注原地弹窗 {text, idx, frag}
   const [jumpBack, setJumpBack] = useState(null); // 链接跳转前的位置 {c, a}，供返回胶囊用
   const migratedHlRef = useRef(new Set()); // 懒迁移防重入（本次会话内已写回的划线 id）
-  const [epubReady, setEpubReady] = useState(false);
+  const [readerLoader, setReaderLoader] = useState(null);
 
   const [discussOpen, setDiscussOpen] = useState(false);
   const [discussFull, setDiscussFull] = useState(false);
@@ -130,15 +127,12 @@ export default function ReadTab({ active, sessionId }) {
   const pendingLocRef = useRef(null); // 章节 HTML 落地后要跳的位置：{pos}|{anchor}|'last'|null
   const [chapterHtml, setChapterHtml] = useState('');
   const [chapterIndex, setChapterIndex] = useState(0);
-  const readerContentRef = useRef(null);
   const loadSeqRef = useRef(0);
   const currentChapterRef = useRef('');
   const activeSelectionRef = useRef(null);
 
   const fileInputRef = useRef(null);
   const sessionMinutesRef = useRef(0);
-  // txt 最近一次划选的时间戳（防选词余波误触点击手势）
-  const lastTxtSelTsRef = useRef(0);
 
   // ==== M4 共读状态 ====
   const pendingPagesRef = useRef([]);        // 停留确认、待上报的已读页
@@ -200,10 +194,12 @@ export default function ReadTab({ active, sessionId }) {
   }, []);
 
   useEffect(() => {
-    if (active) {
+    if (!active) return undefined;
+    const timer = setTimeout(() => {
       loadBooks();
       loadBgSettings();
-    }
+    }, 0);
+    return () => clearTimeout(timer);
   }, [active, loadBooks, loadBgSettings]);
 
   const handleImport = () => {
@@ -311,7 +307,7 @@ export default function ReadTab({ active, sessionId }) {
     let pct = progress;
     let excerpt = '';
 
-    if (currentBook.format === 'epub') {
+    if (['epub', 'txt'].includes(currentBook.format)) {
       const a = pagedRef.current?.getAnchor();
       if (!a) return;
       cfi = serializePosLoc(chapterIndexRef.current, a);
@@ -336,11 +332,6 @@ export default function ReadTab({ active, sessionId }) {
         return best ? best.label : '';
       };
       excerpt = findLabel() || `位置 ${pct}%`;
-    } else {
-      const el = readerContentRef.current;
-      if (!el) return;
-      pct = Math.round((el.scrollTop / (el.scrollHeight - el.clientHeight)) * 100) || 0;
-      excerpt = `读到 ${pct}%`;
     }
 
     try {
@@ -354,7 +345,7 @@ export default function ReadTab({ active, sessionId }) {
       if (saved && saved.id) setBookmarks(prev => [saved, ...prev]);
 
       // 书签同时充当"最后阅读位置"：下次打开这本书直接落在最新书签
-      const location = currentBook.format === 'epub' ? cfi : String(readerContentRef.current?.scrollTop ?? 0);
+      const location = cfi;
       const progressRes = await apiFetch(`${API}/api/books/${currentBook.id}/progress`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -385,17 +376,17 @@ export default function ReadTab({ active, sessionId }) {
   };
 
   const jumpToBookmark = (bm) => {
-    if (currentBook.format === 'epub') {
+    if (['epub', 'txt'].includes(currentBook.format)) {
       const parsed = parseLoc(bm.cfi);
       if (parsed) {
         if (parsed.c === chapterIndexRef.current && pagedRef.current) pagedRef.current.goToAnchor(parsed.pos || parsed.anchor?.start);
         else loadChapter(parsed.c, parsed.pos ? { pos: parsed.pos } : null);
-      } else if (bm.cfi) {
-        loadChapter(legacyCfiChapter(bm.cfi), null); // 旧书签只能回到章节开头
+      } else if (currentBook.format === 'epub' && bm.cfi) {
+        loadChapter(legacyCfiChapter(bm.cfi), null);
+      } else if (currentBook.format === 'txt') {
+        const fallback = epubLoaderRef.current?.positionFromProgress?.(bm.progress);
+        if (fallback) loadChapter(fallback.c, { pos: fallback.pos });
       }
-    } else if (readerContentRef.current) {
-      const el = readerContentRef.current;
-      el.scrollTop = ((bm.progress || 0) / 100) * (el.scrollHeight - el.clientHeight);
     }
     setShowBookmarks(false);
   };
@@ -428,7 +419,7 @@ export default function ReadTab({ active, sessionId }) {
       console.error('Load fresh book error:', err);
     }
 
-    const readStatePromise = shelfBook.format === 'epub'
+    const readStatePromise = ['epub', 'txt'].includes(shelfBook.format)
       ? apiFetch(`${API}/api/books/${shelfBook.id}/read-state`)
           .then(res => (res.ok ? res.json() : null))
           .catch(() => null)
@@ -439,7 +430,7 @@ export default function ReadTab({ active, sessionId }) {
     // 恢复位置取"最新动作"：最新书签 vs 关书自动保存的位置，谁的时间晚听谁的。
     // （她的习惯是读完加书签——那书签就是最新动作，行为不变；只在忘加书签时兜底）
     const latestBookmark = loadedBookmarks.find(b => b.format === book.format);
-    if (book.format === 'epub') {
+    if (['epub', 'txt'].includes(book.format)) {
       const bmTime = latestBookmark?.cfi && latestBookmark?.created_at ? Date.parse(latestBookmark.created_at) : 0;
       const autoTime = readState?.current_anchor && readState?.updated_at ? Date.parse(readState.updated_at) : 0;
       if (bmTime >= autoTime && bmTime > 0) {
@@ -459,20 +450,10 @@ export default function ReadTab({ active, sessionId }) {
     setReaderOpen(true);
     setProgress(book.reading_progress || 0);
     setPageInfo(null);
+    setReaderLoader(null);
     currentChapterRef.current = '';
 
 
-    if (book.format === 'txt') {
-      try {
-        const res = await fetch(book.file_url);
-        const text = await res.text();
-        setBookContent(text);
-        setChapterTitle(book.title);
-      } catch (err) {
-        console.error('Load txt error:', err);
-        setBookContent('加载失败');
-      }
-    }
   };
 
   // 加载指定章节；loc: {pos:{p,o}} | {anchor:{start,end}} | 'last' | null(章首)
@@ -497,6 +478,17 @@ export default function ReadTab({ active, sessionId }) {
     setChapterHtml(data.html);
   }, []);
 
+  // 翻到新页 -> 重置停留计时；批注插条引发的重分页不打断计时（按锚点判断是否真换页）
+  function resetDwellTimer() {
+    if (!['epub', 'txt'].includes(currentBook?.format)) return;
+    const a = pagedRef.current?.getAnchor();
+    const key = a ? `${chapterIndexRef.current}:${a.p}:${a.o}` : '';
+    if (key && key === dwellKeyRef.current) return;
+    dwellKeyRef.current = key;
+    clearTimeout(dwellTimerRef.current);
+    dwellTimerRef.current = setTimeout(() => confirmPageRef.current?.(), READ_DWELL_MS);
+  };
+
   // 全书进度：有字数权重按字数算，权重还没算完就按章节数估
   const updateProgressFromPage = (pg) => {
     if (!pg) return;
@@ -520,23 +512,28 @@ export default function ReadTab({ active, sessionId }) {
   };
 
   useEffect(() => {
-    if (!readerOpen || !currentBook || currentBook.format !== 'epub') return;
+    if (!readerOpen || !currentBook || !['epub', 'txt'].includes(currentBook.format)) return;
     let cancelled = false;
 
     (async () => {
       try {
-        const loader = await openEpub(currentBook.file_url);
+        const loader = currentBook.format === 'epub'
+          ? await openEpub(currentBook.file_url)
+          : await openTxt(currentBook.file_url);
         if (cancelled) { loader.destroy(); return; }
         epubLoaderRef.current = loader;
         setTocItems(loader.toc);
-        setEpubReady(true);
+        setReaderLoader(loader);
 
         // 恢复上次位置：新格式(mk1)带章内锚点，旧 CFI 只能回到所在章节开头
         const saved = currentBook.reading_location;
         const parsed = parseLoc(saved);
         if (parsed) await loadChapter(parsed.c, parsed.pos ? { pos: parsed.pos } : null);
         else if (saved && String(saved).startsWith('epubcfi(')) await loadChapter(legacyCfiChapter(saved), null);
-        else await loadChapter(0, null);
+        else if (currentBook.format === 'txt') {
+          const fallback = loader.positionFromProgress?.(currentBook.reading_progress);
+          await loadChapter(fallback?.c || 0, fallback?.pos ? { pos: fallback.pos } : null);
+        } else await loadChapter(0, null);
 
         loader.computeWeights()
           .then(() => {
@@ -558,7 +555,6 @@ export default function ReadTab({ active, sessionId }) {
       setChapterHtml('');
       setChapterIndex(0);
       chapterIndexRef.current = 0;
-      setEpubReady(false);
     };
   }, [readerOpen, currentBook?.id, loadChapter]);
 
@@ -583,9 +579,9 @@ export default function ReadTab({ active, sessionId }) {
     if (dir === 'next' && c < loader.chapterCount - 1) loadChapter(c + 1, null);
   };
 
-  const handleEpubSelection = (sel) => {
+  const handlePagedSelection = (sel) => {
     if (!sel) { setActiveSelection(null); return; }
-    setActiveSelection({ format: 'epub', ...sel });
+    setActiveSelection({ format: currentBook?.format || 'epub', ...sel });
   };
 
   // 从（可能未打开的）章节 HTML 里抽取片段锚点对应的文字（脚注内容弹窗用）
@@ -670,14 +666,14 @@ export default function ReadTab({ active, sessionId }) {
   // 批量上报已读页；有新内容时附带前瞻窗口给 Elias 补批注库存
   const flushReadEvents = async () => {
     const book = currentBook;
-    if (!book || book.format !== 'epub') return;
+    if (!book || !['epub', 'txt'].includes(book.format)) return;
     clearTimeout(flushTimerRef.current);
     flushTimerRef.current = 0;
 
     const confirmed = pendingPagesRef.current.splice(0);
     if (!confirmed.length) return;
 
-    const body = { confirmed };
+    const body = { confirmed, format: book.format };
     const cur = pagedRef.current?.getAnchor();
     if (cur) body.current_anchor = serializePosLoc(chapterIndexRef.current, cur);
 
@@ -710,7 +706,7 @@ export default function ReadTab({ active, sessionId }) {
 
   // 当前页停留满 15 秒：确认为"真正读过"，入待上报队列
   const confirmCurrentPage = () => {
-    if (!readerOpen || currentBook?.format !== 'epub' || !pagedRef.current) return;
+    if (!readerOpen || !['epub', 'txt'].includes(currentBook?.format) || !pagedRef.current) return;
     const pd = pagedRef.current.getPageData();
     if (!pd || !pd.text.trim()) return;
     const c = chapterIndexRef.current;
@@ -732,23 +728,14 @@ export default function ReadTab({ active, sessionId }) {
       flushTimerRef.current = setTimeout(() => { flushTimerRef.current = 0; flushReadEvents(); }, READ_FLUSH_MS);
     }
   };
-  confirmPageRef.current = confirmCurrentPage;
-
-  // 翻到新页 -> 重置停留计时；批注插条引发的重分页不打断计时（按锚点判断是否真换页）
-  const resetDwellTimer = () => {
-    if (currentBook?.format !== 'epub') return;
-    const a = pagedRef.current?.getAnchor();
-    const key = a ? `${chapterIndexRef.current}:${a.p}:${a.o}` : '';
-    if (key && key === dwellKeyRef.current) return;
-    dwellKeyRef.current = key;
-    clearTimeout(dwellTimerRef.current);
-    dwellTimerRef.current = setTimeout(() => confirmPageRef.current?.(), READ_DWELL_MS);
-  };
+  useEffect(() => {
+    confirmPageRef.current = confirmCurrentPage;
+  });
 
   // 每 4 秒增量拉取划线批注：Elias 的新笔迹几秒内出现在书页上。
   // 内容没变化时保持原 state 引用，不触发无谓的重渲染/重分页
   useEffect(() => {
-    if (!readerOpen || !currentBook || currentBook.format !== 'epub') return;
+    if (!readerOpen || !currentBook || !['epub', 'txt'].includes(currentBook.format)) return;
     const bookId = currentBook.id;
     const sig = (arr) => arr.map(h => `${h.id}:${h.has_discussion ? 1 : 0}:${h.ai_reply ? 1 : 0}:${h.color}:${h.cfi_range || ''}`).join('|');
     const timer = setInterval(async () => {
@@ -862,20 +849,27 @@ export default function ReadTab({ active, sessionId }) {
   // epub 划线回显：交给 PagedReader（inline span，不触发重排）。
   // Elias = 蓝下划线，有讨论 = 粉下划线，普通划线 = 色块。
   // 新锚点(mk1)只画当前章节的；旧 CFI 划线退化为 selected_text 文本匹配。
-  const epubHighlights = useMemo(() => {
-    if (!currentBook || currentBook.format !== 'epub') return [];
+  const pagedHighlights = useMemo(() => {
+    if (!currentBook || !['epub', 'txt'].includes(currentBook.format)) return [];
     return highlights
-      .filter(h => h.format === 'epub' && (h.cfi_range || h.selected_text))
+      .filter(h => h.format === currentBook.format && (h.cfi_range || h.selected_text))
       .map(h => {
         const parsed = parseLoc(h.cfi_range);
         if (parsed && parsed.c !== chapterIndex) return null;
+        const legacyChapter = !parsed && currentBook.format === 'txt'
+          ? readerLoader?.legacyChapterForLine?.(h.line_index)
+          : null;
+        if (legacyChapter != null && legacyChapter !== chapterIndex) return null;
+        const legacyAnchor = !parsed && currentBook.format === 'txt'
+          ? readerLoader?.legacyRangeForChapter?.(h, chapterIndex)
+          : null;
         const hasRecall = h.has_discussion || h.author === 'ai';
         const annotationText = h.author === 'ai' ? h.ai_reply : h.user_thought;
         return {
           id: h.id,
-          anchor: parsed?.anchor || null,
-          textFallback: parsed ? null : h.selected_text,
-          onAnchorResolved: parsed ? null : (anchor) => migrateHighlightAnchor(h, anchor),
+          anchor: parsed?.anchor || legacyAnchor || null,
+          textFallback: parsed || legacyAnchor ? null : h.selected_text,
+          onAnchorResolved: parsed || legacyAnchor ? null : (anchor) => migrateHighlightAnchor(h, anchor),
           // 她的笔迹一律粉系下划线（色点选的是深浅），Elias 一律蓝色下划线——同段重叠也分得清
           className: h.author === 'ai' ? 'hl-ai-line' : 'hl-user-line',
           style: h.author === 'ai' ? null : { textDecorationColor: underlineColorOf(h.color) },
@@ -892,79 +886,8 @@ export default function ReadTab({ active, sessionId }) {
         };
       })
       .filter(Boolean);
-  }, [highlights, chapterIndex, currentBook]);
+  }, [highlights, chapterIndex, currentBook, readerLoader]);
 
-  useEffect(() => {
-    if (!readerOpen || !currentBook || currentBook.format !== 'txt') return;
-    if (!readerContentRef.current || !bookContent) return;
-
-    const el = readerContentRef.current;
-    const savedPct = currentBook.reading_progress || 0;
-    setTimeout(() => {
-      el.scrollTop = (savedPct / 100) * (el.scrollHeight - el.clientHeight);
-    }, 100);
-  }, [readerOpen, bookContent]);
-
-  // txt 划词检测
-  useEffect(() => {
-    if (!readerOpen || !currentBook || currentBook.format !== 'txt') return;
-    let timer;
-
-    function getLineIndexAndOffset(node, offset) {
-      const el = node.nodeType === 3 ? node.parentElement : node;
-      const p = el.closest('[data-line-index]');
-      if (!p) return null;
-      return { lineIndex: parseInt(p.dataset.lineIndex, 10), offset };
-    }
-
-    const handler = () => {
-      // 划选时间戳先记（不等防抖），供 handleTxtClick 判断"这次点击是不是选词余波"
-      const rawSel = window.getSelection();
-      if (rawSel && rawSel.toString().trim()) {
-        lastTxtSelTsRef.current = Date.now();
-
-        // Hide the stale action bar while a native selection handle is moving.
-        if (activeSelectionRef.current) {
-          activeSelectionRef.current = null;
-          setActiveSelection(null);
-        }
-      }
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        const sel = window.getSelection();
-        const text = sel.toString().trim();
-        if (!text || !readerContentRef.current?.contains(sel.anchorNode)) { setActiveSelection(null); return; }
-        const range = sel.getRangeAt(0);
-        const startInfo = getLineIndexAndOffset(range.startContainer, range.startOffset);
-        const endInfo = getLineIndexAndOffset(range.endContainer, range.endOffset);
-        if (!startInfo || !endInfo) return;
-        const rect = range.getBoundingClientRect();
-        setActiveSelection({ text, format: 'txt', lineIndex: startInfo.lineIndex, endLineIndex: endInfo.lineIndex, startOffset: startInfo.offset, endOffset: endInfo.offset, anchorX: rect.left + rect.width / 2, anchorY: rect.bottom });
-      }, 350);
-    };
-
-    document.addEventListener('selectionchange', handler);
-    return () => { document.removeEventListener('selectionchange', handler); clearTimeout(timer); };
-  }, [readerOpen, currentBook]);
-
-  const handleTxtScroll = useCallback(() => {
-    if (!readerContentRef.current || !currentBook) return;
-    const el = readerContentRef.current;
-    const pct = Math.round((el.scrollTop / (el.scrollHeight - el.clientHeight)) * 100);
-    setProgress(pct);
-  }, [currentBook]);
-
-  const handleTxtClick = (e) => {
-    const sel = window.getSelection().toString().trim();
-    if (sel) return;
-    if (Date.now() - lastTxtSelTsRef.current < 600) return; // 刚划过词，不当点击手势
-    const rect = readerContentRef.current.getBoundingClientRect();
-    const y = e.clientY - rect.top;
-    const h = rect.height;
-    if (y > h * 0.3 && y < h * 0.7) {
-      toggleImmersive();
-    }
-  };
 
   const dismissSelection = () => {
     setActiveSelection(null);
@@ -978,7 +901,7 @@ export default function ReadTab({ active, sessionId }) {
 
   const buildHighlightPayload = (sel, color) => {
     const payload = { format: sel.format, selected_text: sel.text, color, has_discussion: false };
-    if (sel.format === 'epub') payload.cfi_range = serializeRangeLoc(chapterIndexRef.current, sel.anchor);
+    if (sel.anchor) payload.cfi_range = serializeRangeLoc(chapterIndexRef.current, sel.anchor);
     else {
       payload.line_index = sel.lineIndex;
       payload.end_line_index = sel.endLineIndex;
@@ -1008,7 +931,7 @@ export default function ReadTab({ active, sessionId }) {
 
   const closeReader = () => {
     // 关书时把当前位置存成"最后阅读位置"（旧版只有加书签才存）
-    if (currentBook?.format === 'epub' && pagedRef.current) {
+    if (['epub', 'txt'].includes(currentBook?.format) && pagedRef.current) {
       const a = pagedRef.current.getAnchor();
       if (a) {
         apiFetch(`${API}/api/books/${currentBook.id}/progress`, {
@@ -1036,7 +959,7 @@ export default function ReadTab({ active, sessionId }) {
 
     setReaderOpen(false);
     setCurrentBook(null);
-    setBookContent('');
+    setReaderLoader(null);
     setImmersive(false);
     setShowToc(false);
     setShowBgPanel(false);
@@ -1051,7 +974,6 @@ export default function ReadTab({ active, sessionId }) {
     setFootnotePop(null);
     setJumpBack(null);
     migratedHlRef.current.clear();
-    setEpubReady(false);
     setDiscussOpen(false);
     setDiscussTurns([]);
     setDiscussHighlightId(null);
@@ -1059,7 +981,7 @@ export default function ReadTab({ active, sessionId }) {
   };
 
   const handleTocClick = (item) => {
-    if (currentBook.format === 'epub' && epubLoaderRef.current) {
+    if (['epub', 'txt'].includes(currentBook.format) && epubLoaderRef.current) {
       const idx = epubLoaderRef.current.hrefToIndex(item.href);
       if (idx >= 0) loadChapter(idx, null);
     }
@@ -1140,85 +1062,6 @@ export default function ReadTab({ active, sessionId }) {
   const readerBgStyle = usingCustomBg ? { backgroundColor: 'transparent' } : { backgroundColor: bgValue };
 
   // 划线分段渲染
-  const getLineSegments = (lineIndex, lineText) => {
-    const overlapping = highlights.filter(
-      h => h.format === 'txt' && h.line_index <= lineIndex && h.end_line_index >= lineIndex
-    );
-    if (overlapping.length === 0) return [{ text: lineText, hl: null }];
-
-    const ranges = overlapping
-      .map(h => ({
-        start: h.line_index === lineIndex ? h.start_offset : 0,
-        end: h.end_line_index === lineIndex ? h.end_offset : lineText.length,
-        color: h.color,
-        id: h.id,
-        discussed: h.has_discussion,
-        isAi: h.author === 'ai',
-        h,
-      }))
-      .sort((a, b) => a.start - b.start);
-
-    const segments = [];
-    let cursor = 0;
-    ranges.forEach(r => {
-      if (r.start > cursor) segments.push({ text: lineText.slice(cursor, r.start), hl: null });
-      segments.push({ text: lineText.slice(r.start, r.end), hl: r });
-      cursor = Math.max(cursor, r.end);
-    });
-    if (cursor < lineText.length) segments.push({ text: lineText.slice(cursor), hl: null });
-    return segments;
-  };
-
-  const renderTxtContent = () => {
-    if (!bookContent) return <p style={{ color: '#999', textAlign: 'center', marginTop: 40 }}>加载中...</p>;
-    return bookContent.split('\n').filter(line => line.trim()).map((line, i) => {
-      const annotations = highlights.filter((h) => {
-        if (h.format !== 'txt') return false;
-        const endLine = h.end_line_index ?? h.line_index;
-        return endLine === i && (h.author === 'ai' ? h.ai_reply : h.user_thought);
-      });
-      return (
-        <Fragment key={i}>
-          <p data-line-index={i}>
-            {getLineSegments(i, line).map((seg, si) =>
-              seg.hl ? (
-                <mark
-                  key={si}
-                  className={(seg.hl.discussed || seg.hl.isAi) ? 'txt-highlight txt-highlight-discussed' : 'txt-highlight'}
-                  style={seg.hl.isAi
-                    ? { backgroundColor: 'transparent', borderBottom: `2px solid ${AI_UNDERLINE_STROKE}` }
-                    : { backgroundColor: 'transparent', borderBottom: `2px solid ${underlineColorOf(seg.hl.color)}` }}
-                  data-highlight-id={seg.hl.id}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (seg.hl.discussed || seg.hl.isAi) openHighlightRecall(seg.hl.h);
-                    else setHlMenu({ h: seg.hl.h, x: e.clientX, y: e.clientY });
-                  }}
-                >
-                  {seg.text}
-                </mark>
-              ) : (
-                <span key={si}>{seg.text}</span>
-              )
-            )}
-          </p>
-          {annotations.map(h => (
-            <button
-              type="button"
-              key={h.id}
-              className={`reader-annotation reader-annotation-${h.author === 'ai' ? 'ai' : 'user'}`}
-              onClick={(e) => { e.stopPropagation(); openHighlightRecall(h); }}
-            >
-              <span className="reader-annotation-label">{h.author === 'ai' ? 'Elias' : '我的批注'}</span>
-              <span className="reader-annotation-body">{h.author === 'ai' ? h.ai_reply : h.user_thought}</span>
-            </button>
-          ))}
-        </Fragment>
-      );
-    });
-  };
-
-  // 讨论面板逻辑
   const openDiscuss = () => {
     if (!activeSelection) return;
     setDiscussPassage(activeSelection);
@@ -1441,7 +1284,7 @@ export default function ReadTab({ active, sessionId }) {
               返回
             </button>
             <span className="reader-title-text">{currentBook.title}</span>
-            {currentBook.format === 'epub' && (
+            {['epub', 'txt'].includes(currentBook.format) && (
               <button className="reader-toc-btn" onClick={() => { setImmersive(false); setShowToc(prev => !prev); setShowBookmarks(false); setShowBgPanel(false); }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="3" y1="6" x2="21" y2="6" />
@@ -1564,30 +1407,23 @@ export default function ReadTab({ active, sessionId }) {
           )}
           </div>
 
-          {currentBook.format === 'epub' && (
+          {['epub', 'txt'].includes(currentBook.format) && (
             <div className="epub-reader" style={readerBgStyle}>
               <PagedReader
                 ref={pagedRef}
                 html={chapterHtml}
-                highlights={epubHighlights}
+                highlights={pagedHighlights}
                 onPageChange={updateProgressFromPage}
                 onContentReady={applyPendingLocation}
                 onEdge={handleEdge}
                 onTapCenter={toggleImmersive}
-                onSelection={handleEpubSelection}
-                onLink={handleEpubLink}
+                onSelection={handlePagedSelection}
+                onLink={currentBook.format === 'epub' ? handleEpubLink : undefined}
                 selectionActive={!!activeSelection}
               />
             </div>
           )}
 
-          {currentBook.format === 'txt' && (
-            <div className="txt-reader" style={readerBgStyle} ref={readerContentRef} onScroll={handleTxtScroll} onClick={handleTxtClick}>
-              <div className="txt-content">
-                {renderTxtContent()}
-              </div>
-            </div>
-          )}
 
           <div className={`reader-footer ${immersive ? 'reader-footer-hidden' : ''}`}>
             <span>{pageInfo ? `本章 ${pageInfo.current}/${pageInfo.total} 页 · 全书 ${progress}%` : `${progress}%`}</span>

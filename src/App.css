@@ -2632,6 +2632,13 @@
   break-after: avoid;
 }
 
+.paged-reader-inner .txt-auto-heading {
+  text-align: center;
+  font-size: 1.2em;
+  font-weight: 600;
+  margin: 1.2em 0 1em;
+}
+
 .paged-reader-inner img {
   max-width: 100%;
   max-height: 85vh;
