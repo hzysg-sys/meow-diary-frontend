@@ -2724,6 +2724,70 @@
   width: 30%;
 }
 
+/* 脚注原地弹窗：不离开正文就能看注释 */
+.footnote-pop {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 56px;
+  z-index: 300;
+  background: #fffdfb;
+  border-radius: 16px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.18);
+  padding: 14px 16px;
+  max-height: 45vh;
+  display: flex;
+  flex-direction: column;
+}
+.footnote-pop-title {
+  font-size: 12px;
+  color: #c98a98;
+  margin-bottom: 6px;
+}
+.footnote-pop-body {
+  font-size: 14px;
+  line-height: 1.75;
+  color: #444;
+  overflow-y: auto;
+  flex: 1;
+}
+.footnote-pop-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 10px;
+}
+.footnote-pop-actions button {
+  background: #f5dee3;
+  border: none;
+  border-radius: 14px;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: #57534e;
+}
+
+/* 链接跳转后的返回胶囊 */
+.jump-back-pill {
+  position: fixed;
+  right: 16px;
+  bottom: 64px;
+  z-index: 240;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(201,138,152,0.95);
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: 9px 14px;
+  font-size: 13px;
+  box-shadow: 0 4px 14px rgba(201,138,152,0.4);
+}
+.jump-back-dismiss {
+  opacity: 0.8;
+  padding: 0 2px;
+}
+
 /* 划线菜单的透明遮罩：点空白关闭菜单，同时挡住下层的翻页点击 */
 .hl-menu-backdrop {
   position: fixed;

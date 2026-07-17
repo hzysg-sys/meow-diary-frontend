@@ -109,6 +109,8 @@ export default function ReadTab({ active, sessionId }) {
   const [highlights, setHighlights] = useState([]);
   const [activeSelection, setActiveSelection] = useState(null);
   const [hlMenu, setHlMenu] = useState(null); // 点击划线弹出的小菜单 {h, x, y}
+  const [footnotePop, setFootnotePop] = useState(null); // 脚注原地弹窗 {text, idx, frag}
+  const [jumpBack, setJumpBack] = useState(null); // 链接跳转前的位置 {c, a}，供返回胶囊用
   const migratedHlRef = useRef(new Set()); // 懒迁移防重入（本次会话内已写回的划线 id）
   const [epubReady, setEpubReady] = useState(false);
 
@@ -577,28 +579,80 @@ export default function ReadTab({ active, sessionId }) {
     setActiveSelection({ format: 'epub', ...sel });
   };
 
-  // 章节内 <a> 链接（脚注/交叉引用）：解析成 spine 章节 + 片段 id 跳转
-  const handleEpubLink = (href) => {
+  // 从（可能未打开的）章节 HTML 里抽取片段锚点对应的文字（脚注内容弹窗用）
+  const extractFragmentText = async (idx, frag) => {
+    const loader = epubLoaderRef.current;
+    if (!loader || !frag) return null;
+    try {
+      const data = await loader.loadChapter(idx);
+      if (!data?.html) return null;
+      const doc = new DOMParser().parseFromString(data.html, 'text/html');
+      const el = doc.getElementById(frag) || doc.querySelector(`[name="${CSS.escape(frag)}"]`);
+      if (!el) return null;
+      let text = (el.textContent || '').trim();
+      if (!text) {
+        // 纯锚点空元素：先看所在块，再向后找最近的有字的元素
+        text = (el.closest('p, li, dd, div')?.textContent || '').trim();
+        let cur = el;
+        while (!text && cur.nextElementSibling) {
+          cur = cur.nextElementSibling;
+          text = (cur.textContent || '').trim();
+        }
+      }
+      return text ? text.slice(0, 600) : null;
+    } catch { return null; }
+  };
+
+  // 跳转前记住当前位置，供"返回原进度"胶囊使用
+  const rememberJumpBack = () => {
+    const a = pagedRef.current?.getAnchor();
+    if (a) setJumpBack({ c: chapterIndexRef.current, a });
+  };
+
+  const returnFromJump = () => {
+    if (!jumpBack) return;
+    if (jumpBack.c === chapterIndexRef.current) pagedRef.current?.goToAnchor(jumpBack.a);
+    else loadChapter(jumpBack.c, { pos: jumpBack.a });
+    setJumpBack(null);
+  };
+
+  // 章节内 <a> 链接（脚注/交叉引用）：优先原地弹出注释内容，不打断阅读；
+  // 弹窗里可选择真正跳过去（跳转会留"返回原进度"胶囊）
+  const handleEpubLink = async (href) => {
     const loader = epubLoaderRef.current;
     if (!loader || !href) return;
     const [rawPath, frag] = href.split('#');
-    if (!rawPath) { // 纯 #fragment：本章内跳
-      if (frag) pagedRef.current?.goToFragment(frag);
-      return;
+    let idx = chapterIndexRef.current;
+    if (rawPath) {
+      const cur = currentChapterRef.current || '';
+      const dir = cur.includes('/') ? cur.slice(0, cur.lastIndexOf('/') + 1) : '';
+      let path;
+      try { path = decodeURIComponent(new URL(rawPath, `http://epub/${dir}`).pathname.slice(1)); }
+      catch { path = rawPath; }
+      idx = loader.hrefToIndex(path);
+      if (idx < 0) return; // 不在书里的链接，忽略
     }
-    // 相对路径以当前章节所在目录为基准解析
-    const cur = currentChapterRef.current || '';
-    const dir = cur.includes('/') ? cur.slice(0, cur.lastIndexOf('/') + 1) : '';
-    let path;
-    try { path = decodeURIComponent(new URL(rawPath, `http://epub/${dir}`).pathname.slice(1)); }
-    catch { path = rawPath; }
-    const idx = loader.hrefToIndex(path);
-    if (idx < 0) return; // 不在书里的链接，忽略
+
+    if (frag) {
+      const text = await extractFragmentText(idx, frag);
+      if (text) { setFootnotePop({ text, idx, frag }); return; }
+    }
+    // 没有片段或取不到内容：直接跳，留返回胶囊
+    rememberJumpBack();
     if (idx === chapterIndexRef.current) {
       if (frag) pagedRef.current?.goToFragment(frag);
     } else {
       loadChapter(idx, frag ? { fragment: frag } : null);
     }
+  };
+
+  const jumpFromFootnotePop = () => {
+    const pop = footnotePop;
+    setFootnotePop(null);
+    if (!pop) return;
+    rememberJumpBack();
+    if (pop.idx === chapterIndexRef.current) pagedRef.current?.goToFragment(pop.frag);
+    else loadChapter(pop.idx, { fragment: pop.frag });
   };
 
   // ==== M4 阅读循环：停留确认 -> 批量上报 -> Elias 前瞻补货 ====
@@ -970,6 +1024,8 @@ export default function ReadTab({ active, sessionId }) {
     setHighlights([]);
     setActiveSelection(null);
     setHlMenu(null);
+    setFootnotePop(null);
+    setJumpBack(null);
     migratedHlRef.current.clear();
     setEpubReady(false);
     setDiscussOpen(false);
@@ -1503,6 +1559,30 @@ export default function ReadTab({ active, sessionId }) {
               <div className="reader-progress-fill" style={{ width: `${progress}%` }}></div>
             </div>
           </div>
+
+          {footnotePop && (
+            <>
+              <div className="hl-menu-backdrop" onClick={() => setFootnotePop(null)} />
+              <div className="footnote-pop">
+                <div className="footnote-pop-title">注释</div>
+                <div className="footnote-pop-body">{footnotePop.text}</div>
+                <div className="footnote-pop-actions">
+                  <button onClick={jumpFromFootnotePop}>跳到注释处</button>
+                  <button onClick={() => setFootnotePop(null)}>关闭</button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {jumpBack && !immersive && (
+            <button className="jump-back-pill" onClick={returnFromJump}>
+              ↩ 返回原进度
+              <span
+                className="jump-back-dismiss"
+                onClick={(e) => { e.stopPropagation(); setJumpBack(null); }}
+              >✕</span>
+            </button>
+          )}
 
           {hlMenu && (
             <>
