@@ -487,6 +487,11 @@ const PagedReader = forwardRef(function PagedReader(
     let edgeLocked = false;
     let lockSignature = '';
     let lockDirection = null;
+    let sessionSignature = '';
+    let sessionSettlesUntil = 0;
+    let lastStartPoint = null;
+    let lastEndPoint = null;
+    let dragDirection = null;
 
     const clearEdgeTimer = () => {
       clearTimeout(edgeTimerRef.current);
@@ -563,23 +568,56 @@ const PagedReader = forwardRef(function PagedReader(
         edgeLocked = false;
         lockSignature = '';
         lockDirection = null;
+        sessionSignature = '';
+        sessionSettlesUntil = 0;
+        lastStartPoint = null;
+        lastEndPoint = null;
+        dragDirection = null;
       } else {
         const range = sel.getRangeAt(0);
         const signature = signatureOf(range);
 
         if (signature) {
           const startPoint = endpointOf(range.startContainer, range.startOffset);
+          const endPoint = endpointOf(range.endContainer, range.endOffset);
           const focus = endpointOf(sel.focusNode, sel.focusOffset);
           const focusAtStart = sameEndpoint(focus, startPoint);
+          let movedAfterSettle = false;
+          let startChanged = false;
+          let endChanged = false;
+
+          // Initial long-press word expansion is browser setup, not a handle drag.
+          // Edge paging is armed only by a later, real endpoint movement.
+          if (!sessionSignature) {
+            sessionSignature = signature;
+            sessionSettlesUntil = Date.now() + 400;
+          } else if (signature !== sessionSignature) {
+            startChanged = !sameEndpoint(startPoint, lastStartPoint);
+            endChanged = !sameEndpoint(endPoint, lastEndPoint);
+            movedAfterSettle = Date.now() >= sessionSettlesUntil;
+            sessionSignature = signature;
+          }
+
+          if (movedAfterSettle && !edgeLocked) {
+            if (startChanged && !endChanged) dragDirection = 'prev';
+            else if (endChanged && !startChanged) dragDirection = 'next';
+            else if (!dragDirection) dragDirection = focusAtStart ? 'prev' : 'next';
+          }
+
+          lastStartPoint = startPoint;
+          lastEndPoint = endPoint;
+
           const focusRect = focusRectOf(sel, focusAtStart);
           const outerRect = outer.getBoundingClientRect();
 
           if (focusRect) {
-            const nearNextEdge = !focusAtStart && (
+            // Direction comes from the handle that actually moved, not Selection.focus.
+            // Android may swap focus/start while a continuous long-press crosses a column.
+            const nearNextEdge = dragDirection === 'next' && (
               focusRect.right > outerRect.right - EDGE_ZONE ||
               focusRect.bottom > outerRect.bottom - EDGE_ZONE_Y
             );
-            const nearPrevEdge = focusAtStart && (
+            const nearPrevEdge = dragDirection === 'prev' && (
               focusRect.left < outerRect.left + EDGE_ZONE ||
               focusRect.top < outerRect.top + EDGE_ZONE_Y
             );
