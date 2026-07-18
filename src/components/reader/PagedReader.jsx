@@ -484,10 +484,9 @@ const PagedReader = forwardRef(function PagedReader(
     const outer = outerRef.current;
     if (!outer) return;
 
-    let bridgeRaf = 0;
     let edgeLocked = false;
     let lockSignature = '';
-    let lockSettlesUntil = 0;
+    let lockDirection = null;
 
     const clearEdgeTimer = () => {
       clearTimeout(edgeTimerRef.current);
@@ -506,9 +505,11 @@ const PagedReader = forwardRef(function PagedReader(
     const sameEndpoint = (a, b) => !!a && !!b && a.p === b.p && a.o === b.o;
 
     const signatureOf = (range) => {
-      const start = endpointOf(range.startContainer, range.startOffset);
-      const end = endpointOf(range.endContainer, range.endOffset);
-      return start && end ? [start.p, start.o, end.p, end.o].join(':') : '';
+      const startPoint = endpointOf(range.startContainer, range.startOffset);
+      const endPoint = endpointOf(range.endContainer, range.endOffset);
+      return startPoint && endPoint
+        ? [startPoint.p, startPoint.o, endPoint.p, endPoint.o].join(':')
+        : '';
     };
 
     const focusRectOf = (sel, focusAtStart) => {
@@ -523,75 +524,30 @@ const PagedReader = forwardRef(function PagedReader(
         from -= 1;
         to = from + 1;
       }
-      const start = pointAt(para, from);
-      const end = pointAt(para, to);
-      if (!start || !end) return null;
+      const startPoint = pointAt(para, from);
+      const endPoint = pointAt(para, to);
+      if (!startPoint || !endPoint) return null;
       const probe = document.createRange();
-      probe.setStart(start.node, start.offset);
-      probe.setEnd(end.node, end.offset);
+      probe.setStart(startPoint.node, startPoint.offset);
+      probe.setEnd(endPoint.node, endPoint.offset);
       return probe.getBoundingClientRect();
     };
 
-    const bridgeSelection = (direction, expectedSignature) => {
+    // Only move the CSS page. Mutating Selection/Range while Android is dragging
+    // a native handle ends the gesture and makes both handles disappear.
+    const flipSelectionPage = (direction, expectedSignature) => {
       const live = window.getSelection();
-      const inner = innerRef.current;
-      if (!live?.rangeCount || !inner || !live.anchorNode || !live.focusNode) return;
+      if (!live?.rangeCount || !live.anchorNode || !live.focusNode) return;
       if (signatureOf(live.getRangeAt(0)) !== expectedSignature) return;
 
       const fromPage = pageRef.current;
       const toPage = direction === 'next' ? fromPage + 1 : fromPage - 1;
       if (toPage < 0 || toPage >= totalRef.current) return;
 
-      let target = direction === 'next'
-        ? anchorForPage(toPage)
-        : anchorForPage(fromPage);
-      if (!target) return;
-
-      const paras = inner.querySelectorAll('[data-p]');
-      if (direction === 'next') {
-        const para = paras[target.p];
-        if (para) target = { p: target.p, o: Math.min(textOfPara(para).length, target.o + 1) };
-      } else if (target.o > 0) {
-        target = { p: target.p, o: target.o - 1 };
-      } else if (target.p > 0) {
-        const previous = paras[target.p - 1];
-        if (previous) target = { p: target.p - 1, o: Math.max(0, textOfPara(previous).length - 1) };
-      }
-
-      const baseNode = live.anchorNode;
-      const baseOffset = live.anchorOffset;
       edgeLocked = true;
-      lockSignature = '';
-      lockSettlesUntil = Date.now() + 120;
+      lockSignature = expectedSignature;
+      lockDirection = direction;
       applyPage(toPage);
-
-      cancelAnimationFrame(bridgeRaf);
-      bridgeRaf = requestAnimationFrame(() => {
-        if (!baseNode.isConnected) return;
-        const para = paras[target.p];
-        const point = para && pointAt(para, target.o);
-        if (!point) return;
-        try {
-          if (typeof live.setBaseAndExtent === 'function') {
-            live.setBaseAndExtent(baseNode, baseOffset, point.node, point.offset);
-          } else {
-            const bridged = document.createRange();
-            if (direction === 'next') {
-              bridged.setStart(baseNode, baseOffset);
-              bridged.setEnd(point.node, point.offset);
-            } else {
-              bridged.setStart(point.node, point.offset);
-              bridged.setEnd(baseNode, baseOffset);
-            }
-            live.removeAllRanges();
-            live.addRange(bridged);
-          }
-          if (live.rangeCount) lockSignature = signatureOf(live.getRangeAt(0));
-        } catch {
-          edgeLocked = false;
-          lockSignature = '';
-        }
-      });
     };
 
     const handler = () => {
@@ -606,23 +562,15 @@ const PagedReader = forwardRef(function PagedReader(
       if (!hasSel) {
         edgeLocked = false;
         lockSignature = '';
+        lockDirection = null;
       } else {
         const range = sel.getRangeAt(0);
         const signature = signatureOf(range);
 
-        if (edgeLocked) {
-          if (!lockSignature || signature === lockSignature || Date.now() < lockSettlesUntil) {
-            if (signature) lockSignature = signature;
-          } else {
-            edgeLocked = false;
-            lockSignature = '';
-          }
-        }
-
-        if (!edgeLocked && signature) {
-          const start = endpointOf(range.startContainer, range.startOffset);
+        if (signature) {
+          const startPoint = endpointOf(range.startContainer, range.startOffset);
           const focus = endpointOf(sel.focusNode, sel.focusOffset);
-          const focusAtStart = sameEndpoint(focus, start);
+          const focusAtStart = sameEndpoint(focus, startPoint);
           const focusRect = focusRectOf(sel, focusAtStart);
           const outerRect = outer.getBoundingClientRect();
 
@@ -635,15 +583,27 @@ const PagedReader = forwardRef(function PagedReader(
               focusRect.left < outerRect.left + EDGE_ZONE ||
               focusRect.top < outerRect.top + EDGE_ZONE_Y
             );
+
+            // A page flip stays locked while the handle remains at that same edge.
+            // Moving the native handle away from the edge rearms the next flip.
+            if (edgeLocked && signature !== lockSignature) {
+              lockSignature = signature;
+              const stillAtLockedEdge = lockDirection === 'next' ? nearNextEdge : nearPrevEdge;
+              if (!stillAtLockedEdge) {
+                edgeLocked = false;
+                lockDirection = null;
+              }
+            }
+
             const direction = nearNextEdge ? 'next' : (nearPrevEdge ? 'prev' : null);
             const canFlip = direction === 'next'
               ? pageRef.current < totalRef.current - 1
               : direction === 'prev' && pageRef.current > 0;
 
-            if (direction && canFlip) {
+            if (!edgeLocked && direction && canFlip) {
               edgeTimerRef.current = setTimeout(() => {
                 edgeTimerRef.current = 0;
-                if (!edgeLocked) bridgeSelection(direction, signature);
+                if (!edgeLocked) flipSelectionPage(direction, signature);
               }, EDGE_DWELL_MS);
             }
           }
@@ -680,9 +640,8 @@ const PagedReader = forwardRef(function PagedReader(
       document.removeEventListener('selectionchange', handler);
       clearTimeout(selDebounceRef.current);
       clearEdgeTimer();
-      cancelAnimationFrame(bridgeRaf);
     };
-  }, [applyPage, anchorForPage]);
+  }, [applyPage]);
   useEffect(() => {
     const outer = outerRef.current;
     if (!outer) return;
