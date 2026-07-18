@@ -9,6 +9,7 @@ import { useEffect, useRef, useImperativeHandle, forwardRef, useCallback } from 
 
 const COLUMN_GAP = 32;
 const EDGE_ZONE = 30;       // 选区末端距页边多少像素内触发自动翻页
+const EDGE_ZONE_Y = 52;
 const EDGE_DWELL_MS = 650;  // 贴边停留多久翻一页
 
 // ---- 锚点工具 ----
@@ -483,33 +484,168 @@ const PagedReader = forwardRef(function PagedReader(
     const outer = outerRef.current;
     if (!outer) return;
 
-    const clearEdgeTimer = () => { clearTimeout(edgeTimerRef.current); edgeTimerRef.current = 0; };
+    let bridgeRaf = 0;
+    let edgeLocked = false;
+    let lockSignature = '';
+    let lockSettlesUntil = 0;
+
+    const clearEdgeTimer = () => {
+      clearTimeout(edgeTimerRef.current);
+      edgeTimerRef.current = 0;
+    };
+
+    const endpointOf = (node, offset) => {
+      const para = node && paraOf(node);
+      if (!para) return null;
+      return {
+        p: parseInt(para.dataset.p, 10),
+        o: offsetInPara(para, node, offset),
+      };
+    };
+
+    const sameEndpoint = (a, b) => !!a && !!b && a.p === b.p && a.o === b.o;
+
+    const signatureOf = (range) => {
+      const start = endpointOf(range.startContainer, range.startOffset);
+      const end = endpointOf(range.endContainer, range.endOffset);
+      return start && end ? [start.p, start.o, end.p, end.o].join(':') : '';
+    };
+
+    const focusRectOf = (sel, focusAtStart) => {
+      const focus = endpointOf(sel.focusNode, sel.focusOffset);
+      const inner = innerRef.current;
+      const para = focus && inner?.querySelectorAll('[data-p]')[focus.p];
+      if (!focus || !para) return null;
+      const length = textOfPara(para).length;
+      let from = focusAtStart ? focus.o : Math.max(0, focus.o - 1);
+      let to = Math.min(length, from + 1);
+      if (to === from && from > 0) {
+        from -= 1;
+        to = from + 1;
+      }
+      const start = pointAt(para, from);
+      const end = pointAt(para, to);
+      if (!start || !end) return null;
+      const probe = document.createRange();
+      probe.setStart(start.node, start.offset);
+      probe.setEnd(end.node, end.offset);
+      return probe.getBoundingClientRect();
+    };
+
+    const bridgeSelection = (direction, expectedSignature) => {
+      const live = window.getSelection();
+      const inner = innerRef.current;
+      if (!live?.rangeCount || !inner || !live.anchorNode || !live.focusNode) return;
+      if (signatureOf(live.getRangeAt(0)) !== expectedSignature) return;
+
+      const fromPage = pageRef.current;
+      const toPage = direction === 'next' ? fromPage + 1 : fromPage - 1;
+      if (toPage < 0 || toPage >= totalRef.current) return;
+
+      let target = direction === 'next'
+        ? anchorForPage(toPage)
+        : anchorForPage(fromPage);
+      if (!target) return;
+
+      const paras = inner.querySelectorAll('[data-p]');
+      if (direction === 'next') {
+        const para = paras[target.p];
+        if (para) target = { p: target.p, o: Math.min(textOfPara(para).length, target.o + 1) };
+      } else if (target.o > 0) {
+        target = { p: target.p, o: target.o - 1 };
+      } else if (target.p > 0) {
+        const previous = paras[target.p - 1];
+        if (previous) target = { p: target.p - 1, o: Math.max(0, textOfPara(previous).length - 1) };
+      }
+
+      const baseNode = live.anchorNode;
+      const baseOffset = live.anchorOffset;
+      edgeLocked = true;
+      lockSignature = '';
+      lockSettlesUntil = Date.now() + 120;
+      applyPage(toPage);
+
+      cancelAnimationFrame(bridgeRaf);
+      bridgeRaf = requestAnimationFrame(() => {
+        if (!baseNode.isConnected) return;
+        const para = paras[target.p];
+        const point = para && pointAt(para, target.o);
+        if (!point) return;
+        try {
+          if (typeof live.setBaseAndExtent === 'function') {
+            live.setBaseAndExtent(baseNode, baseOffset, point.node, point.offset);
+          } else {
+            const bridged = document.createRange();
+            if (direction === 'next') {
+              bridged.setStart(baseNode, baseOffset);
+              bridged.setEnd(point.node, point.offset);
+            } else {
+              bridged.setStart(point.node, point.offset);
+              bridged.setEnd(baseNode, baseOffset);
+            }
+            live.removeAllRanges();
+            live.addRange(bridged);
+          }
+          if (live.rangeCount) lockSignature = signatureOf(live.getRangeAt(0));
+        } catch {
+          edgeLocked = false;
+          lockSignature = '';
+        }
+      });
+    };
 
     const handler = () => {
       const sel = window.getSelection();
       const hasSel = sel && sel.rangeCount > 0 && sel.toString().trim() && outer.contains(sel.anchorNode);
       if (hasSel) {
         suppressClickUntilRef.current = Date.now() + 1000;
-
-        // Hide the stale action bar as soon as a native handle moves again.
-        // The debounce below restores it at the new range after movement stops.
         if (selectionActiveRef.current) cbRef.current.onSelection?.(null);
       }
 
-      // Never rebuild or correct the native Range while a handle is moving:
-      // Android treats that mutation as the end of the selection gesture.
-
-      // 贴边检测不等防抖：选区末端矩形贴近页缘，停留片刻就翻页，选区随连续 DOM 自然延伸
       clearEdgeTimer();
-      if (hasSel) {
-        const rects = sel.getRangeAt(0).getClientRects();
-        const last = rects[rects.length - 1];
-        const outerRect = outer.getBoundingClientRect();
-        if (last) {
-          if (last.right > outerRect.right - EDGE_ZONE && pageRef.current < totalRef.current - 1) {
-            edgeTimerRef.current = setTimeout(() => applyPage(pageRef.current + 1), EDGE_DWELL_MS);
-          } else if (last.left < outerRect.left + EDGE_ZONE && pageRef.current > 0 && rects[0].left < outerRect.left + EDGE_ZONE) {
-            edgeTimerRef.current = setTimeout(() => applyPage(pageRef.current - 1), EDGE_DWELL_MS);
+      if (!hasSel) {
+        edgeLocked = false;
+        lockSignature = '';
+      } else {
+        const range = sel.getRangeAt(0);
+        const signature = signatureOf(range);
+
+        if (edgeLocked) {
+          if (!lockSignature || signature === lockSignature || Date.now() < lockSettlesUntil) {
+            if (signature) lockSignature = signature;
+          } else {
+            edgeLocked = false;
+            lockSignature = '';
+          }
+        }
+
+        if (!edgeLocked && signature) {
+          const start = endpointOf(range.startContainer, range.startOffset);
+          const focus = endpointOf(sel.focusNode, sel.focusOffset);
+          const focusAtStart = sameEndpoint(focus, start);
+          const focusRect = focusRectOf(sel, focusAtStart);
+          const outerRect = outer.getBoundingClientRect();
+
+          if (focusRect) {
+            const nearNextEdge = !focusAtStart && (
+              focusRect.right > outerRect.right - EDGE_ZONE ||
+              focusRect.bottom > outerRect.bottom - EDGE_ZONE_Y
+            );
+            const nearPrevEdge = focusAtStart && (
+              focusRect.left < outerRect.left + EDGE_ZONE ||
+              focusRect.top < outerRect.top + EDGE_ZONE_Y
+            );
+            const direction = nearNextEdge ? 'next' : (nearPrevEdge ? 'prev' : null);
+            const canFlip = direction === 'next'
+              ? pageRef.current < totalRef.current - 1
+              : direction === 'prev' && pageRef.current > 0;
+
+            if (direction && canFlip) {
+              edgeTimerRef.current = setTimeout(() => {
+                edgeTimerRef.current = 0;
+                if (!edgeLocked) bridgeSelection(direction, signature);
+              }, EDGE_DWELL_MS);
+            }
           }
         }
       }
@@ -534,7 +670,7 @@ const PagedReader = forwardRef(function PagedReader(
             end: { p: parseInt(ePara.dataset.p, 10), o: offsetInPara(ePara, range.endContainer, range.endOffset) },
           },
           anchorX: rect.left + rect.width / 2,
-          anchorY: rect.bottom, // 操作栏放选区下方，和原生菜单（上方）错开
+          anchorY: rect.bottom,
         });
       }, 350);
     };
@@ -544,10 +680,9 @@ const PagedReader = forwardRef(function PagedReader(
       document.removeEventListener('selectionchange', handler);
       clearTimeout(selDebounceRef.current);
       clearEdgeTimer();
+      cancelAnimationFrame(bridgeRaf);
     };
-  }, [applyPage]);
-
-  // ---- 点按翻页（左/右 1/3）与中央呼出菜单；长按选词永不触发翻页 ----
+  }, [applyPage, anchorForPage]);
   useEffect(() => {
     const outer = outerRef.current;
     if (!outer) return;
