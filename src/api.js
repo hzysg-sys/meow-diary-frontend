@@ -282,6 +282,13 @@ export async function fetchDiary() {
   return res.json()
 }
 
+export async function deleteDiary(id) {
+  const res = await apiFetch(`${API_BASE_URL}/api/diary/${id}`, { method: 'DELETE' })
+  const data = await res.json().catch(() => null)
+  if (!res.ok) throw new Error(data?.error || `\u5220\u9664\u65e5\u8bb0\u5931\u8d25 (${res.status})`)
+  return data
+}
+
 export async function fetchEnergyState() {
   const res = await apiFetch(`${API_BASE_URL}/api/energy`)
   if (!res.ok) throw new Error(`加载精力状态失败 (${res.status})`)
