@@ -344,6 +344,33 @@
   font-size: 11px;
   color: #c7abb7;
 }
+.diary-entry-delete {
+  width: 28px;
+  height: 28px;
+  margin: -6px -6px -6px auto;
+  padding: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #c7abb7;
+  cursor: pointer;
+  transition: color 0.18s ease, background 0.18s ease, opacity 0.18s ease;
+}
+.diary-entry-delete .icon {
+  width: 15px;
+  height: 15px;
+}
+.diary-entry-delete:hover:not(:disabled) {
+  color: #d6688a;
+  background: rgba(251, 235, 238, 0.85);
+}
+.diary-entry-delete:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
 .diary-entry-text {
   font-size: 13.5px;
   color: #7c5a6b;

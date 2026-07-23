@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { fetchDiary } from '../api'
+import { deleteDiary, fetchDiary } from '../api'
+import { TrashIcon } from './icons'
 
 // 心情色与设计稿一致
 const MOODS = {
@@ -46,6 +47,7 @@ export default function DiaryTab({ show, onSeen }) {
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [deletingId, setDeletingId] = useState(null)
   const loadedOnce = useRef(false)
 
   useEffect(() => {
@@ -64,6 +66,34 @@ export default function DiaryTab({ show, onSeen }) {
       .finally(() => setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [show])
+
+  const handleDelete = async (entry) => {
+    if (deletingId != null) return
+    const confirmed = confirm(
+      '\u786e\u5b9a\u5220\u9664\u8fd9\u7bc7\u65e5\u8bb0\u5417\uff1f\n\n\u5220\u9664\u540e\uff0c\u5b83\u4e5f\u4f1a\u4ece\u804a\u5929\u4e0a\u4e0b\u6587\u4e2d\u6d88\u5931\uff0c\u4ed6\u4e0d\u4f1a\u518d\u8bb0\u5f97\u81ea\u5df1\u5199\u8fc7\u8fd9\u7bc7\u3002',
+    )
+    if (!confirmed) return
+
+    setDeletingId(entry.id)
+    setError(null)
+    try {
+      await deleteDiary(entry.id)
+      setEntries((current) => {
+        const remaining = current.filter((item) => item.id !== entry.id)
+        if (remaining[0]?.created_at) {
+          localStorage.setItem('diary-last-seen', remaining[0].created_at)
+        } else {
+          localStorage.removeItem('diary-last-seen')
+        }
+        return remaining
+      })
+      onSeen?.()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   const days = groupByDay(entries)
 
@@ -103,6 +133,16 @@ export default function DiaryTab({ show, onSeen }) {
                     />
                     <span className="diary-mood-name">{e.mood}</span>
                     <span className="diary-entry-time">{fmtTime(e.created_at)}</span>
+                    <button
+                      className="diary-entry-delete"
+                      type="button"
+                      aria-label={'\u5220\u9664\u8fd9\u7bc7\u65e5\u8bb0\u5e76\u6e05\u9664\u76f8\u5173\u8bb0\u5fc6'}
+                      title={'\u5220\u9664\u65e5\u8bb0'}
+                      disabled={deletingId != null}
+                      onClick={() => handleDelete(e)}
+                    >
+                      <TrashIcon />
+                    </button>
                   </div>
 
                   {e.locked ? (
